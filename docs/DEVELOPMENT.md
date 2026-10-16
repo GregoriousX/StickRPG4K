@@ -40,6 +40,15 @@ python .\dev\refresh_helpers.py --version wide4k-your-change-YYYY-MM-DD --apply
 & .\config.exe --install
 ```
 
+`compile_helpers.py` first runs `dev/ruffle_playerglobal.py`, which builds the
+flash.* type library JPEXS needs from the playerglobal embedded in `runtime/ruffle.exe`
+(no Adobe/AIR SDK required). Unchanged sources must recompile byte-identical to
+`patches/*.abc`; check that before refreshing.
+
+The phone's Minigames.swf classes (XPhone, QualitySlider) are not visible by name
+from our dat.swf module: take classes from existing instances (`x.constructor`).
+Test UI with real mouse clicks; dispatched events do not catch overlapping panels.
+
 The refresh helper expects the current recognized HQ game and verified original
 files. It previews changes by default, preserves album/embedded variants and adds
 the previous version's hashes for automatic upgrades. It does not change game logic

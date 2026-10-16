@@ -20,6 +20,8 @@ classes.mkdir(exist_ok=True)
 libs = [toolchain/'ffdec/ffdec.jar'] + sorted((toolchain/'ffdec/lib').glob('*.jar'))
 env = os.environ.copy()
 env['APPDATA'] = str(output/'profile')
+from ruffle_playerglobal import build as build_playerglobal
+build_playerglobal(root/'runtime/ruffle.exe', output/'profile')
 subprocess.run([str(java), '-jar', str(ecj), '-17', '-cp', str(toolchain/'ffdec/lib/ffdec_lib.jar'),
                 '-d', str(classes), str(root/'dev/CompileAs.java')], env=env, check=True)
 for name in ['NativeMusic', 'Preferences', 'SmoothWide']:

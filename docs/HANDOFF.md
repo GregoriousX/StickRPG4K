@@ -12,12 +12,18 @@ The continuation archive's `CONTINUATION.json` records its exact Git commit.
 - 22 music excerpts use matching local Steam Soundtrack MP3 frames without re-encoding.
   Piano/casino keep originals. Missing album files preserve existing valid HQ audio
   during upgrades; otherwise the game retains embedded music.
-- Escape opens/closes the in-game phone without leaving fullscreen. A scoped native
-  launcher hook maps real Escape to F13; the SWF handles that menu key.
+- Escape without leaving fullscreen: a scoped native launcher hook maps real Escape
+  to F13. The SWF clicks the topmost visible Leave/Close button (phone, ID card,
+  receipt, shops, dialogs, summaries, inventory, minigames); otherwise it opens the
+  phone in the city, or forwards a normal Escape to the game (ATM keypad Cancel).
+- Unreleased fixes after 1.4.0 (data `wide4k-menu-fixes-2026-10-16`): the options
+  panel no longer throws on open (QualitySlider lookup across domains), its
+  background no longer covers the Save/Cheats tabs, Escape-to-Leave as above.
+  Verified by the user in game: options, Save tab, Escape on phone/ID card/close_btn.
 - Music/SFX volume sliders reuse original QualitySlider artwork and persist separately
   from scene attenuation. Quality defaults to Ultra. Saves/load/Continue use the
   original local format without account prompts. Account service callbacks are disabled.
-- Manifest data version: `wide4k-offline-ui-2026-10-16`. Installer upgrades only recognized
+- Manifest data version: `wide4k-menu-fixes-2026-10-16` (upgrades from 1.4.0). Installer upgrades only recognized
   generated files; unknown files and edited data block replacement. Saves are separate.
 - Original EXE SHA-256: `2bde20d37e45ea5ac1d517d55a89241250718f213f615982171aad28b9b56a06`.
   Steam app 307640, tested original build 297016. Ruffle nightly 2026-10-09.

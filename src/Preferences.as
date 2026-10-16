@@ -7,6 +7,7 @@ package com.srpg2.hd {
     import flash.system.ApplicationDomain;
     import flash.text.*;
     import flash.utils.Dictionary;
+    import flash.utils.getQualifiedClassName;
 
     public class Preferences {
         public static var musicGain:Number = 1;
@@ -49,24 +50,57 @@ package com.srpg2.hd {
             load();main=game;
             game.stage.addEventListener(KeyboardEvent.KEY_DOWN,keyDown,false,10000,true);
         }
+        private static var forwarding:Boolean = false;
         private static function keyDown(event:KeyboardEvent):void {
             // The Windows launcher maps physical Escape to F13 before Ruffle's
             // fullscreen shortcut. Escape also works in a non-desktop player.
-            if(event.keyCode!=124 && event.keyCode!=27)return;
-            event.preventDefault();event.stopImmediatePropagation();
-            toggleMenu();
-        }
-        public static function toggleMenu():void {
-            if(!main)return;
-            var phoneClass:Object=main.XPhone;
-            if(!phoneClass)return;
-            var phone:Object=phoneClass.active_phone;
-            if(phone && phone.parent && phone.LeaveButton.visible) {
-                main.stage.focus=null;
-                phone.LeaveButton.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
-            } else if(!main.controls_disabled && main.currentLabel=="city") {
-                main.stage.focus=null;main.showXPhone();
+            if(forwarding || (event.keyCode!=124 && event.keyCode!=27))return;
+            if(toggleMenu()) {
+                event.preventDefault();event.stopImmediatePropagation();
+            } else if(event.keyCode==124) {
+                // Nothing to leave: hand the game its own Escape (e.g. ATM Cancel).
+                event.stopImmediatePropagation();
+                var stage:Stage=main.stage;
+                var target:InteractiveObject=stage.focus ? stage.focus : stage;
+                forwarding=true;
+                try {target.dispatchEvent(new KeyboardEvent(KeyboardEvent.KEY_DOWN,true,false,27,27));}
+                finally {forwarding=false;}
             }
+        }
+        // Instance names and classes the original game uses for Leave/Close.
+        private static const LEAVE_NAMES:Object={leave_btn:true,close_btn:true,id_close_btn:true,
+            receipt_close_btn:true,closeAction:true,LeaveButton:true,leaveButton:true};
+        private static function findLeave(node:DisplayObject):InteractiveObject {
+            if(!node.visible)return null;
+            var found:InteractiveObject=null;
+            var container:DisplayObjectContainer=node as DisplayObjectContainer;
+            if(container && !(node is SimpleButton)) {
+                // Later children render on top; keep the last match.
+                for(var i:int=0;i<container.numChildren;i++) {
+                    var child:InteractiveObject=findLeave(container.getChildAt(i));
+                    if(child)found=child;
+                }
+            }
+            if(found)return found;
+            var item:InteractiveObject=node as InteractiveObject;
+            if(!item || !item.mouseEnabled || (item is SimpleButton && !SimpleButton(item).enabled))return null;
+            return LEAVE_NAMES[item.name]===true || getQualifiedClassName(item)=="leave_btn" ? item : null;
+        }
+        public static function toggleMenu():Boolean {
+            if(!main || !main.stage)return false;
+            var leave:InteractiveObject=findLeave(main.stage);
+            if(leave) {
+                main.stage.focus=null;
+                trace("SRPG2 escape: "+leave.name+" ("+getQualifiedClassName(leave)+")");
+                leave.dispatchEvent(new MouseEvent(MouseEvent.CLICK));
+                return true;
+            }
+            if(main.XPhone && !main.controls_disabled && main.currentLabel=="city") {
+                main.stage.focus=null;main.showXPhone();
+                return true;
+            }
+            trace("SRPG2 escape: passed to game");
+            return false;
         }
         public static function changeScreen(phone:Object,event:MouseEvent):void {
             phone.SaveScreen.visible=event.currentTarget===phone.SaveButton;
@@ -89,9 +123,11 @@ package com.srpg2.hd {
             item.addEventListener(MouseEvent.CLICK,function(event:MouseEvent):void {action();});
             return item;
         }
-        private static function slider(panel:Sprite,name:String,title:String,y:Number,value:Number,change:Function,width:Number,steps:int=100):void {
+        private static function slider(panel:Sprite,template:Object,name:String,title:String,y:Number,value:Number,change:Function,width:Number,steps:int=100):void {
             if(title!="")panel.addChild(label(title,9,y,width-18,11));
-            var sliderClass:Class=ApplicationDomain.currentDomain.getDefinition("com.srpg2.QualitySlider") as Class;
+            // QualitySlider lives in Minigames.swf's child domain, which this
+            // dat.swf module cannot resolve by name; reuse the phone's own class.
+            var sliderClass:Class=template.constructor as Class;
             var track:Object=new sliderClass();track.name=name;
             var trackBounds:Rectangle=track.getBounds(track);
             var scale:Number=(width-20)/trackBounds.width;
@@ -120,25 +156,36 @@ package com.srpg2.hd {
             load();if(phones[phone])return;phones[phone]=true;
             phone.LoginScreen.visible=false;phone.RegisterScreen.visible=false;
             var screen:MovieClip=phone.SoundScreen;
-            var bounds:Rectangle=screen.getBounds(screen);
-            trace("OFFLINE_OPTIONS bounds="+bounds+" phone="+phone.getBounds(phone));
-            for(var i:int=0;i<screen.numChildren;i++)screen.getChildAt(i).visible=false;
-            var panel:Sprite=new Sprite();panel.name="hdOptions";panel.x=bounds.x;panel.y=bounds.y;
-            var width:Number=Math.max(170,bounds.width);var height:Number=Math.max(190,bounds.height);
-            panel.graphics.beginFill(0xc6cacb);panel.graphics.drawRect(0,0,width,height);panel.graphics.endFill();
-            panel.graphics.beginFill(0x00aabd);panel.graphics.drawRect(0,0,width,18);panel.graphics.endFill();
-            panel.addChild(label("Options",width/2-22,1,70,11,0xffffff));
-            slider(panel,"musicVolume","MUSIC",22,musicGain,setMusic,width);
-            slider(panel,"sfxVolume","SOUND EFFECTS",72,sfxGain,setSfx,width);
-            var fullscreenButton:Sprite=button("Fullscreen",10,125,width-20,function():void {fullscreen(null);});
-            panel.addChild(fullscreenButton);
-            panel.addChild(label("QUALITY",width/2-28,146,70,12));
-            var qualityNames:Array=["Low","Med.","High","Ultra"];
-            var qualityClass:Object=ApplicationDomain.currentDomain.getDefinition("com.srpg2.XPhone");
-            for(i=0;i<4;i++)panel.addChild(label(qualityNames[i].toUpperCase(),10+i*(width-16)/4,166,(width-20)/4,10));
-            slider(panel,"qualitySlider","",166,qualityClass.quality/3,function(value:Number):void {
-                screen.slider.setSliderValue(Math.round(value*3));qualityChanged(null);
-            },width,3);
+            var panel:Sprite=new Sprite();panel.name="hdOptions";
+            // SoundScreen sits above the phone's tab buttons; the panel's
+            // background must not swallow clicks meant for Save/Cheats.
+            panel.mouseEnabled=false;
+            var i:int;
+            try {
+                var bounds:Rectangle=screen.getBounds(screen);
+                trace("OFFLINE_OPTIONS bounds="+bounds+" phone="+phone.getBounds(phone));
+                panel.x=bounds.x;panel.y=bounds.y;
+                var width:Number=Math.max(170,bounds.width);var height:Number=Math.max(190,bounds.height);
+                panel.graphics.beginFill(0xc6cacb);panel.graphics.drawRect(0,0,width,height);panel.graphics.endFill();
+                panel.graphics.beginFill(0x00aabd);panel.graphics.drawRect(0,0,width,18);panel.graphics.endFill();
+                panel.addChild(label("Options",width/2-22,1,70,11,0xffffff));
+                slider(panel,screen.slider,"musicVolume","MUSIC",22,musicGain,setMusic,width);
+                slider(panel,screen.slider,"sfxVolume","SOUND EFFECTS",72,sfxGain,setSfx,width);
+                var fullscreenButton:Sprite=button("Fullscreen",10,125,width-20,function():void {fullscreen(null);});
+                panel.addChild(fullscreenButton);
+                panel.addChild(label("QUALITY",width/2-28,146,70,12));
+                var qualityNames:Array=["Low","Med.","High","Ultra"];
+                var qualityClass:Object=phone.constructor;
+                for(i=0;i<4;i++)panel.addChild(label(qualityNames[i].toUpperCase(),10+i*(width-16)/4,166,(width-20)/4,10));
+                slider(panel,screen.slider,"qualitySlider","",166,qualityClass.quality/3,function(value:Number):void {
+                    screen.slider.setSliderValue(Math.round(value*3));qualityChanged(null);
+                },width,3);
+            } catch(error:Error) {
+                // Never block the phone: keep the original sound screen instead.
+                trace("OFFLINE_OPTIONS failed: "+error);
+                return;
+            }
+            for(i=0;i<screen.numChildren;i++)screen.getChildAt(i).visible=false;
             screen.addChild(panel);
             trace("OFFLINE_OPTIONS ready music="+musicGain+" sfx="+sfxGain+" quality="+qualityClass.quality);
         }
