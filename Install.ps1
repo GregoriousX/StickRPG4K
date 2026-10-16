@@ -50,6 +50,9 @@ if($null -eq $original) {
     }
     throw ('The supplied EXE is not the supported original Director''s Cut build. Expected SHA-256: ' + $manifest.original_exe_sha256)
 }
+if([IO.Path]::GetFullPath($original.DirectoryName).TrimEnd('\') -ne [IO.Path]::GetFullPath($root).TrimEnd('\')) {
+    throw 'Extract the complete release ZIP next to the original game EXE and run config.exe in that folder.'
+}
 if(Test-Path -LiteralPath $gameFolder) {
     throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run config.exe again. Your saves are in saves\.'
 }
@@ -137,7 +140,7 @@ try {
         }
         if((Hash $target) -ne $file.sha256) { throw ('Rebuilt file checksum mismatch: ' + $file.path) }
     }
-    @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.FullName} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
+    @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.Name} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
     Move-Item -LiteralPath $staging -Destination $gameFolder
     Write-Output 'Mod files prepared.'
 } finally {

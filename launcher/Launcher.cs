@@ -39,7 +39,7 @@ namespace StickRpg4k {
             Label title = AddLabel("StickRPG4K", 24, 17, 550, 35);
             title.Font = new Font("Segoe UI", 21, FontStyle.Bold);
             AddLabel("Widescreen. Ready-made 4K assets. Smoother motion.", 25, 57, 550, 21).ForeColor = muted;
-            AddLabel("Game EXE (original or stick.exe backup)", 24, 98, 550, 20);
+            AddLabel("Original game EXE in this folder", 24, 98, 550, 20);
             source.SetBounds(24, 122, 420, 27);
             source.ReadOnly = true;
             source.BackColor = Color.FromArgb(35, 43, 57);
@@ -88,7 +88,7 @@ namespace StickRpg4k {
             motion.SelectedIndex = settings.Fps == 30 ? 0 : settings.Fps == 120 ? 2 : 1;
             display.SelectedIndex = settings.Fullscreen ? 0 : 1;
             if (!String.IsNullOrEmpty(originalArgument) && File.Exists(originalArgument)) SetSource(originalArgument, "Game copy selected.");
-            else if (!String.IsNullOrEmpty(settings.OriginalExe) && File.Exists(settings.OriginalExe)) SetSource(settings.OriginalExe, "Saved game copy.");
+            else if (!String.IsNullOrEmpty(settings.OriginalExe) && File.Exists(Path.Combine(root, settings.OriginalExe))) SetSource(Path.Combine(root, settings.OriginalExe), "Saved game copy.");
             else FindSource(false);
             UpdateInstallationStatus();
         }
@@ -136,7 +136,7 @@ namespace StickRpg4k {
             bool installed = SteamIntegration.IsInstalled(root, SelectedDirectory());
             restore.Enabled = installed;
             play.Text = launchAfterSave ? "Save & play" : installed ? "Save settings" : "Save & install";
-            status.Text = installed ? "Installed. Use Play in Steam; config.exe changes these settings." : "Setup keeps the original as stick.exe and installs the Steam launcher.";
+            status.Text = installed ? "Installed in this folder. Start the game normally or use Steam." : "Extract the full release ZIP beside the game EXE. Any folder works.";
         }
         private void FindSource(bool onlySteam) {
             if (onlySteam) {
@@ -145,7 +145,7 @@ namespace StickRpg4k {
                 else sourceStatus.Text = "Steam copy not found. Choose the EXE manually.";
             } else {
                 GameSource[] games = SourceDiscovery.FindCandidates(root);
-                if (games.Length > 0) SetSource(games[0].Path, games[0].Origin == "Steam" ? "Steam copy found." : "Original game copy found.");
+                if (games.Length > 0) SetSource(games[0].Path, games[0].Origin == "Steam" ? "Steam copy found. Extract the ZIP there." : "Compatible EXE found in this folder.");
                 else sourceStatus.Text = "Choose your original Director's Cut EXE.";
             }
             UpdateInstallationStatus();
@@ -185,10 +185,10 @@ namespace StickRpg4k {
             status.Text = "Checking the installed mod...";
             try {
                 await Task.Run(() => SetupService.Prepare(root, settings, ProgressMessage));
-                SetSource(settings.OriginalExe, "Original preserved as stick.exe.");
+                SetSource(Path.Combine(root, settings.OriginalExe), "Original preserved as stick.exe.");
                 SetBusy(false);
                 if (launchAfterSave) { DialogResult = DialogResult.OK; Close(); }
-                else status.Text = "Saved. Launch Stick RPG 2 from Steam. The menu stays in config.exe.";
+                else status.Text = "Saved. Start the game normally, through Steam, or with StickRPG4K.exe.";
             } catch (Exception error) {
                 SetBusy(false);
                 status.Text = "Could not save or install the mod.";
@@ -200,14 +200,15 @@ namespace StickRpg4k {
             string directory = SelectedDirectory();
             SetBusy(true);
             try {
+                string originalName = SteamIntegration.ReadLink(directory).OriginalFileName;
                 await Task.Run(() => SteamIntegration.Restore(root, directory));
                 LauncherSettings settings = CurrentSettings();
-                settings.OriginalExe = Path.Combine(directory, SourceDiscovery.OriginalFileName);
-                settings.GameDirectory = "";
+                settings.OriginalExe = originalName;
+                settings.GameDirectory = ".";
                 settings.Save(root);
-                SetSource(settings.OriginalExe, "Original EXE restored.");
+                SetSource(Path.Combine(root, settings.OriginalExe), "Original EXE restored.");
                 SetBusy(false);
-                status.Text = "Original restored. Steam starts the unmodified game. Saves are preserved.";
+                status.Text = "Original EXE restored. Mod settings and saves are preserved.";
             } catch (Exception error) {
                 SetBusy(false);
                 MessageBox.Show(this, error.Message, "StickRPG4K", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -231,11 +232,18 @@ namespace StickRpg4k {
                     LauncherSettings settings = LauncherSettings.Load(root);
                     if (original != null) settings.OriginalExe = original;
                     if (Array.IndexOf(args, "--restore") >= 0) {
-                        SteamIntegration.Restore(root, settings.GameDirectory);
-                        settings.OriginalExe = Path.Combine(settings.GameDirectory, SourceDiscovery.OriginalFileName);
-                        settings.GameDirectory = "";
+                        string originalName = SteamIntegration.ReadLink(root).OriginalFileName;
+                        SteamIntegration.Restore(root, root);
+                        settings.OriginalExe = originalName;
+                        settings.GameDirectory = ".";
                         settings.Save(root);
-                    } else SetupService.Prepare(root, settings, Console.WriteLine);
+                    } else {
+                        if (String.IsNullOrEmpty(settings.OriginalExe)) {
+                            GameSource[] games = SourceDiscovery.FindCandidates(root);
+                            if (games.Length > 0) settings.OriginalExe = games[0].Path;
+                        }
+                        SetupService.Prepare(root, settings, Console.WriteLine);
+                    }
                     return 0;
                 }
                 Application.EnableVisualStyles();

@@ -2,6 +2,7 @@
 /game/
 /.install-work/
 /saves/
+/dist/
 /runtime/config/
 /runtime/cache/
 *.exe

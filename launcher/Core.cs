@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("StickRPG4K")]
 [assembly: AssemblyDescription("Steam launcher and configuration for the StickRPG4K mod")]
 [assembly: AssemblyProduct("StickRPG4K")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace StickRpg4k {
     public sealed class LauncherSettings {
@@ -19,7 +19,7 @@ namespace StickRpg4k {
         public bool Fullscreen { get; set; }
         public string OriginalExe { get; set; }
         public string GameDirectory { get; set; }
-        public LauncherSettings() { Fps = 60; Fullscreen = true; OriginalExe = ""; GameDirectory = ""; }
+        public LauncherSettings() { Fps = 60; Fullscreen = true; OriginalExe = ""; GameDirectory = "."; }
         public static LauncherSettings Load(string root) {
             try {
                 string file = Path.Combine(root, "launcher-settings.json");
@@ -27,6 +27,10 @@ namespace StickRpg4k {
                     LauncherSettings value = new JavaScriptSerializer().Deserialize<LauncherSettings>(File.ReadAllText(file));
                     if (value != null) {
                         if (value.Fps != 30 && value.Fps != 60 && value.Fps != 120) value.Fps = 60;
+                        // Older releases stored machine-specific absolute paths.
+                        // Only the filename in this game folder is used now.
+                        value.OriginalExe = String.IsNullOrEmpty(value.OriginalExe) ? "" : Path.GetFileName(value.OriginalExe);
+                        value.GameDirectory = ".";
                         return value;
                     }
                 }
@@ -34,6 +38,8 @@ namespace StickRpg4k {
             return new LauncherSettings();
         }
         public void Save(string root) {
+            OriginalExe = String.IsNullOrEmpty(OriginalExe) ? "" : Path.GetFileName(OriginalExe);
+            GameDirectory = ".";
             string file = Path.Combine(root, "launcher-settings.json"), temporary = file + ".tmp";
             File.WriteAllText(temporary, new JavaScriptSerializer().Serialize(this));
             if (File.Exists(file)) File.Replace(temporary, file, null); else File.Move(temporary, file);
@@ -68,14 +74,16 @@ namespace StickRpg4k {
     public static class SetupService {
         public static void Prepare(string root, LauncherSettings settings, Action<string> progress) {
             if (String.IsNullOrEmpty(settings.OriginalExe)) throw new InvalidOperationException("Choose the original game EXE first.");
-            string original = SourceDiscovery.ResolveOriginal(settings.OriginalExe);
+            string original = SourceDiscovery.ResolveOriginal(Path.IsPathRooted(settings.OriginalExe) ? settings.OriginalExe : Path.Combine(root, settings.OriginalExe));
+            if (!SteamIntegration.SameDirectory(root, Path.GetDirectoryName(original)))
+                throw new InvalidOperationException("Extract the complete release ZIP next to the game EXE, then run config.exe from that folder. The mod and game must be in the same folder.");
             if (!SourceDiscovery.IsOriginal(original)) throw new InvalidOperationException("This is not the supported original Director's Cut EXE.");
             RunInstaller(root, original, progress);
             progress("Installing the Steam launcher...");
             string directory = Path.GetDirectoryName(original);
-            SteamIntegration.Install(root, directory);
-            settings.OriginalExe = Path.Combine(directory, SourceDiscovery.BackupFileName);
-            settings.GameDirectory = directory;
+            SteamIntegration.Install(root, directory, original);
+            settings.OriginalExe = SourceDiscovery.BackupFileName;
+            settings.GameDirectory = ".";
             settings.Save(root);
         }
         public static void RunInstaller(string root, string original, Action<string> progress) {
@@ -128,10 +136,7 @@ namespace StickRpg4k {
     public static class ModLocation {
         public static string Resolve(string directory) {
             if (File.Exists(Path.Combine(directory, "Install.ps1")) && File.Exists(Path.Combine(directory, "patches", "manifest.json"))) return Path.GetFullPath(directory);
-            IntegrationLink link = SteamIntegration.ReadLink(directory);
-            if (link != null && Path.IsPathRooted(link.ModRoot) && File.Exists(Path.Combine(link.ModRoot, "Install.ps1")) &&
-                File.Exists(Path.Combine(link.ModRoot, "patches", "manifest.json"))) return Path.GetFullPath(link.ModRoot);
-            throw new InvalidOperationException("The StickRPG4K folder could not be found. Open config.exe in your extracted mod folder to install or repair the Steam launcher.");
+            throw new InvalidOperationException("Extract the complete StickRPG4K release ZIP into this game folder, then run config.exe. The assets and runtime must be beside the game.");
         }
         public static void ReportError(string root, Exception error, bool interactive) {
             try { File.WriteAllText(Path.Combine(root, "launcher-error.log"), error.ToString()); } catch (Exception) { }
@@ -152,7 +157,7 @@ namespace StickRpg4k {
                 using (Mutex session = new Mutex(true, @"Local\StickRPG4K-" + id, out created)) {
                     if (!created) return 0;
                     LauncherSettings settings = LauncherSettings.Load(root);
-                    if (!GameSession.IsPrepared(root) || !SteamIntegration.IsInstalled(root, settings.GameDirectory)) {
+                    if (!GameSession.IsPrepared(root) || !SteamIntegration.IsInstalled(root, root)) {
                         using (Process config = Process.Start(new ProcessStartInfo {
                             FileName = Path.Combine(root, "config.exe"), Arguments = "--launch-after-save", WorkingDirectory = root, UseShellExecute = false
                         })) {
@@ -160,7 +165,7 @@ namespace StickRpg4k {
                             if (config.ExitCode != 0) return config.ExitCode;
                         }
                         settings = LauncherSettings.Load(root);
-                        if (!GameSession.IsPrepared(root) || !SteamIntegration.IsInstalled(root, settings.GameDirectory)) return 0;
+                        if (!GameSession.IsPrepared(root) || !SteamIntegration.IsInstalled(root, root)) return 0;
                     }
                     return GameSession.Run(root, settings);
                 }

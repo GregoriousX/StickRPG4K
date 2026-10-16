@@ -10,6 +10,7 @@ namespace StickRpg4k {
         public string OriginalSha256 { get; set; }
         public string LauncherSha256 { get; set; }
         public string ConfigSha256 { get; set; }
+        public string OriginalFileName { get; set; }
     }
     public static class SteamIntegration {
         public const string LinkFileName = "StickRPG4K.link.json";
@@ -17,18 +18,28 @@ namespace StickRpg4k {
             string path = Path.Combine(directory, LinkFileName);
             if (!File.Exists(path)) return null;
             IntegrationLink value = new JavaScriptSerializer().Deserialize<IntegrationLink>(File.ReadAllText(path));
-            if (value == null || value.Format != 1 || value.OriginalSha256 != SourceDiscovery.OriginalSha256 || String.IsNullOrEmpty(value.ModRoot))
+            if (value == null || (value.Format != 1 && value.Format != 2) || value.OriginalSha256 != SourceDiscovery.OriginalSha256 ||
+                (value.Format == 2 && value.ModRoot != "."))
                 throw new InvalidOperationException("Invalid StickRPG4K installation link. Your original EXE has not been changed.");
+            if (String.IsNullOrEmpty(value.OriginalFileName)) value.OriginalFileName = SourceDiscovery.OriginalFileName;
+            ValidateGameFileName(value.OriginalFileName);
             return value;
         }
-        private static bool SamePath(string first, string second) {
+        public static bool SameDirectory(string first, string second) {
             return String.Equals(Path.GetFullPath(first).TrimEnd('\\'), Path.GetFullPath(second).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
         }
+        private static void ValidateGameFileName(string name) {
+            if (name != Path.GetFileName(name) || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                String.Equals(name, SourceDiscovery.BackupFileName, StringComparison.OrdinalIgnoreCase) || String.Equals(name, "config.exe", StringComparison.OrdinalIgnoreCase) ||
+                String.Equals(name, "StickRPG4K.exe", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Unsupported game EXE filename. Keep config.exe, StickRPG4K.exe and stick.exe reserved for the mod.");
+        }
         public static bool IsInstalled(string root, string directory) {
-            if (String.IsNullOrEmpty(directory) || !Directory.Exists(directory)) return false;
+            if (String.IsNullOrEmpty(directory) || !Directory.Exists(directory) || !SameDirectory(root, directory)) return false;
             IntegrationLink link = ReadLink(directory);
-            string target = Path.Combine(directory, SourceDiscovery.OriginalFileName);
-            return link != null && SamePath(root, link.ModRoot) && File.Exists(target) && SourceDiscovery.Hash(target) == link.LauncherSha256 &&
+            if (link == null || link.Format != 2) return false;
+            string target = Path.Combine(directory, link.OriginalFileName);
+            return File.Exists(target) && SourceDiscovery.Hash(target) == link.LauncherSha256 &&
                    SourceDiscovery.IsOriginal(Path.Combine(directory, SourceDiscovery.BackupFileName));
         }
         private static void AllowOwnedFile(string path, string wantedHash, string previousHash) {
@@ -38,27 +49,32 @@ namespace StickRpg4k {
                 throw new InvalidOperationException("An unrelated file already exists: " + path + ". Move it before installing StickRPG4K.");
         }
         public static void Install(string root, string gameDirectory) {
+            string original = SourceDiscovery.ResolveOriginal(Path.Combine(gameDirectory, SourceDiscovery.OriginalFileName));
+            Install(root, gameDirectory, original);
+        }
+        public static void Install(string root, string gameDirectory, string original) {
             root = Path.GetFullPath(root); gameDirectory = Path.GetFullPath(gameDirectory);
+            if (!SameDirectory(root, gameDirectory) || !SameDirectory(root, Path.GetDirectoryName(Path.GetFullPath(original))))
+                throw new InvalidOperationException("The mod package must be extracted into the same folder as the game EXE.");
             string launcher = Path.Combine(root, "StickRPG4K.exe"), config = Path.Combine(root, "config.exe");
-            string target = Path.Combine(gameDirectory, SourceDiscovery.OriginalFileName), backup = Path.Combine(gameDirectory, SourceDiscovery.BackupFileName);
+            IntegrationLink old = ReadLink(gameDirectory);
+            string fileName = old != null ? old.OriginalFileName : String.Equals(Path.GetFileName(original), SourceDiscovery.BackupFileName, StringComparison.OrdinalIgnoreCase) ? SourceDiscovery.OriginalFileName : Path.GetFileName(original);
+            ValidateGameFileName(fileName);
+            string target = Path.Combine(gameDirectory, fileName), backup = Path.Combine(gameDirectory, SourceDiscovery.BackupFileName);
             if (!Directory.Exists(gameDirectory) || !File.Exists(launcher) || !File.Exists(config)) throw new InvalidOperationException("The mod package or original game folder is incomplete.");
             if (SourceDiscovery.IsOriginal(launcher) || SourceDiscovery.IsOriginal(config)) throw new InvalidOperationException("The mod launcher must not contain the original game EXE.");
-            IntegrationLink old = ReadLink(gameDirectory);
             string launcherHash = SourceDiscovery.Hash(launcher), configHash = SourceDiscovery.Hash(config);
             bool hasBackup = File.Exists(backup), originalAtTarget = SourceDiscovery.IsOriginal(target);
             if (hasBackup && !SourceDiscovery.IsOriginal(backup)) throw new InvalidOperationException("stick.exe already exists and is not the supported original game. No files were changed.");
             if (!hasBackup && !originalAtTarget) throw new InvalidOperationException("The original game EXE is missing. Restore the Steam game files before installing.");
             if (!originalAtTarget) AllowOwnedFile(target, launcherHash, old == null ? null : old.LauncherSha256);
-            string installedConfig = Path.Combine(gameDirectory, "config.exe");
-            AllowOwnedFile(installedConfig, configHash, old == null ? null : old.ConfigSha256);
             IntegrationLink link = new IntegrationLink {
-                Format = 1, ModRoot = root, OriginalSha256 = SourceDiscovery.OriginalSha256,
-                LauncherSha256 = launcherHash, ConfigSha256 = configHash
+                Format = 2, ModRoot = ".", OriginalSha256 = SourceDiscovery.OriginalSha256,
+                LauncherSha256 = launcherHash, ConfigSha256 = configHash, OriginalFileName = fileName
             };
             bool renamed = false;
             using (FileTransaction transaction = new FileTransaction(gameDirectory)) {
                 try {
-                    transaction.PutFile(config, installedConfig);
                     transaction.PutText(new JavaScriptSerializer().Serialize(link), Path.Combine(gameDirectory, LinkFileName));
                     if (!hasBackup) { File.Move(target, backup); renamed = true; }
                     transaction.PutFile(launcher, target);
@@ -73,9 +89,10 @@ namespace StickRpg4k {
         }
         public static void Restore(string root, string gameDirectory) {
             gameDirectory = Path.GetFullPath(gameDirectory);
+            if (!SameDirectory(root, gameDirectory)) throw new InvalidOperationException("Run config.exe from the game folder to restore the original.");
             IntegrationLink link = ReadLink(gameDirectory);
-            if (link == null || !SamePath(root, link.ModRoot)) throw new InvalidOperationException("This game folder is not linked to this mod installation.");
-            string target = Path.Combine(gameDirectory, SourceDiscovery.OriginalFileName), backup = Path.Combine(gameDirectory, SourceDiscovery.BackupFileName);
+            if (link == null) throw new InvalidOperationException("This game folder is not linked to this mod installation.");
+            string target = Path.Combine(gameDirectory, link.OriginalFileName), backup = Path.Combine(gameDirectory, SourceDiscovery.BackupFileName);
             if (!SourceDiscovery.IsOriginal(backup)) throw new InvalidOperationException("The original stick.exe backup is missing or changed. Restore the Steam game files instead.");
             if (!SourceDiscovery.IsOriginal(target)) AllowOwnedFile(target, link.LauncherSha256, null);
             using (FileTransaction transaction = new FileTransaction(gameDirectory)) {
@@ -101,7 +118,7 @@ namespace StickRpg4k {
                 temporaryFiles.Add(path); return path;
             }
             private void Put(string staged, string target) {
-                if (!SamePath(directory, Path.GetDirectoryName(target))) throw new IOException("Unsafe installation path.");
+                if (!SameDirectory(directory, Path.GetDirectoryName(target))) throw new IOException("Unsafe installation path.");
                 Change change = new Change { Target = target };
                 if (File.Exists(target)) { change.Previous = Temporary(); File.Replace(staged, target, change.Previous); }
                 else File.Move(staged, target);

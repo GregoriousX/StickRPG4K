@@ -6,26 +6,33 @@ ready-made upscaled assets and the Ruffle runtime.
 
 ## Setup and play
 
-1. Download and extract the ZIP, or clone this repository.
-2. Open **config.exe**. It finds your Steam copy; use **Choose EXE...** if needed.
-3. Choose motion smoothness and display mode, then click **Save & install**.
-4. Start **Stick RPG 2** normally from Steam. Choose **Play Offline** in the game.
+1. Download **StickRPG4K-v1.3.0.zip** from [Releases](https://github.com/GregoriousX/StickRPG4K/releases/latest).
+2. Extract **all ZIP contents directly into your game folder**, beside the original EXE.
+3. Open **config.exe**. It detects compatible EXEs in that folder; use **Choose EXE...** if needed.
+4. Choose motion smoothness and display mode, then click **Save & install**.
+5. Start the game normally, through Steam, or with **StickRPG4K.exe**. Choose **Play Offline** in the game.
 
 Setup extracts your original EXE locally and builds the mod in `game/`. It renames
-the original to **stick.exe** and puts our launcher under Steam's expected name,
-**Stick RPG 2 Director's Cut.exe**. That launcher starts Ruffle with your saved
+the original to **stick.exe** and puts our launcher under the original EXE's name
+(**Stick RPG 2 Director's Cut.exe** for Steam). That launcher starts Ruffle with your saved
 settings and waits until the game closes, keeping Steam's launched process alive
 for playtime tracking. No Steam launch options are needed.
 
-Open **config.exe** in the mod or game folder to change settings. **Restore original
+Any folder works: compatibility is checked against the EXE's SHA-256, independently
+of Steam's location or registry. All assets, settings, runtime and saves stay in
+the game folder. Stored paths are relative, so the folder can be moved together.
+
+Open **config.exe** to change settings. **Restore original
 EXE** switches Steam back to the original game. Steam file verification can also
 replace the launcher; run config.exe again to reinstall it.
 
-Keep this mod folder in place after setup. Saves stay in `saves/`; reinstalling or
-restoring the EXE preserves them. **StickRPG4K.exe** also starts the mod directly
-and opens setup on its first run. Press **Alt+Enter** to toggle fullscreen.
+Saves stay in `saves/`; reinstalling or restoring the EXE preserves them.
+**StickRPG4K.exe** opens setup on its first run. Press **Alt+Enter** to toggle fullscreen.
 Tested with Steam app 307640, build 297016. Windows .NET Framework 4.8 is required;
 Python and upscaling tools are not needed.
+
+Upgrading an earlier install: extract this ZIP into the game folder and run
+config.exe again. The original `stick.exe` backup is reused.
 
 ## Features
 

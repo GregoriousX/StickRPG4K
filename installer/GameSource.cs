@@ -25,7 +25,9 @@ namespace StickRpg4k {
         }
         public static string ResolveOriginal(string path) {
             string full = System.IO.Path.GetFullPath(path);
-            if (String.Equals(System.IO.Path.GetFileName(full), OriginalFileName, StringComparison.OrdinalIgnoreCase)) {
+            string name = System.IO.Path.GetFileName(full);
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && !String.Equals(name, "config.exe", StringComparison.OrdinalIgnoreCase) &&
+                !String.Equals(name, "StickRPG4K.exe", StringComparison.OrdinalIgnoreCase) && !String.Equals(name, BackupFileName, StringComparison.OrdinalIgnoreCase)) {
                 string backup = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(full), BackupFileName);
                 if (!IsOriginal(full) && IsOriginal(backup)) return backup;
             }
@@ -94,20 +96,21 @@ namespace StickRpg4k {
         public static GameSource[] FindCandidates(string modRoot) {
             List<GameSource> results = new List<GameSource>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string path in FindSteamExecutables(SteamRoots()))
-                if (seen.Add(path)) results.Add(new GameSource { Path = path, Origin = "Steam" });
-            foreach (string folder in new[] { modRoot, System.IO.Path.Combine(modRoot, "original") }) {
-                if (!Directory.Exists(folder)) continue;
-                string preferred = System.IO.Path.Combine(folder, OriginalFileName);
-                preferred = ResolveOriginal(preferred);
-                if (File.Exists(preferred) && seen.Add(preferred)) results.Add(new GameSource { Path = preferred, Origin = "Local copy" });
-                foreach (string path in Directory.GetFiles(folder, "*.exe")) {
+            if (Directory.Exists(modRoot)) {
+                foreach (string name in new[] { BackupFileName, OriginalFileName }) {
+                    string preferred = System.IO.Path.Combine(modRoot, name);
+                    if (IsOriginal(preferred) && seen.Add(preferred)) results.Add(new GameSource { Path = preferred, Origin = "This folder" });
+                }
+                foreach (string path in Directory.GetFiles(modRoot, "*.exe")) {
                     string name = System.IO.Path.GetFileName(path);
                     if (String.Equals(name, "StickRPG4K.exe", StringComparison.OrdinalIgnoreCase) ||
                         String.Equals(name, "config.exe", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (seen.Add(path)) results.Add(new GameSource { Path = path, Origin = "Local copy" });
+                    if (seen.Add(path) && IsOriginal(path)) results.Add(new GameSource { Path = path, Origin = "This folder" });
                 }
             }
+            if (results.Count > 0) return results.ToArray();
+            foreach (string path in FindSteamExecutables(SteamRoots()))
+                if (seen.Add(path)) results.Add(new GameSource { Path = path, Origin = "Steam" });
             return results.ToArray();
         }
     }
