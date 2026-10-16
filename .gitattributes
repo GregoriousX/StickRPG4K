@@ -1,0 +1,12 @@
+* -text
+*.md text eol=lf
+*.cs text eol=lf
+*.json text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+.gitattributes text eol=lf
+.gitignore text eol=lf
+*.bin binary
+*.gz binary
+*.abc binary
+*.exe binary

@@ -1,0 +1,13 @@
+/original/
+/game/
+/.install-work/
+/saves/
+/runtime/config/
+/runtime/cache/
+*.exe
+!/runtime/ruffle.exe
+*.swf
+*.sol
+*.log
+Thumbs.db
+Desktop.ini
