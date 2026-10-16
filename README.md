@@ -6,11 +6,11 @@ ready-made upscaled assets and the Ruffle runtime.
 
 ## Setup and play
 
-1. Download **StickRPG4K-v1.3.0.zip** from [Releases](https://github.com/GregoriousX/StickRPG4K/releases/latest).
+1. Download the ZIP from [Releases](https://github.com/GregoriousX/StickRPG4K/releases/latest).
 2. Extract **all ZIP contents directly into your game folder**, beside the original EXE.
 3. Open **config.exe**. It detects compatible EXEs in that folder; use **Choose EXE...** if needed.
 4. Choose motion smoothness and display mode, then click **Save & install**.
-5. Start the game normally, through Steam, or with **StickRPG4K.exe**. Choose **Play Offline** in the game.
+5. Start the game normally, through Steam, or with **StickRPG4K.exe**. Saves work locally without an account.
 
 Setup extracts your original EXE locally and builds the mod in `game/`. It renames
 the original to **stick.exe** and puts our launcher under the original EXE's name
@@ -28,6 +28,7 @@ replace the launcher; run config.exe again to reinstall it.
 
 Saves stay in `saves/`; reinstalling or restoring the EXE preserves them.
 **StickRPG4K.exe** opens setup on its first run. Press **Alt+Enter** to toggle fullscreen.
+Press **Esc** to open or close the game menu; it keeps fullscreen active.
 Tested with Steam app 307640, build 297016. Windows .NET Framework 4.8 is required;
 Python and upscaling tools are not needed.
 
@@ -40,10 +41,22 @@ config.exe again. The original `stick.exe` backup is reused.
 - Upscaled UI and textures up to 4096 pixels, supplied prebuilt.
 - Motion interpolation targeting 60 FPS; game logic stays at 30 FPS.
 - Fixed Ruffle music playback, looping, fades and music controls.
+- Higher-quality Steam album excerpts for 22 music clips, without re-encoding.
+- Independent music and sound effects sliders, saved between sessions.
+- Local saves without XGen account or login prompts; Ultra quality by default.
+
+Keep Steam's original `Soundtrack/` folder beside the EXE when running config.exe.
+Setup uses its matching MP3 files to replace the corresponding embedded music,
+preserving each clip's length, loops and time-of-day transitions. Album files are
+not included in the mod. Missing or unrecognized album files keep the embedded
+audio; casino and piano clips retain their original versions. Run config.exe and
+click **Save & install** after adding the soundtrack to an existing installation.
 
 120 mode is experimental and limited to about 100 interpolation updates/s by
 the bundled Ruffle build. Some rooms' original music filtering is unavailable.
 Original EXEs, generated game files, saves and caches are excluded from Git.
+
+Development and transfer instructions: [development guide](https://github.com/GregoriousX/StickRPG4K/blob/main/docs/DEVELOPMENT.md).
 
 ## Credits
 

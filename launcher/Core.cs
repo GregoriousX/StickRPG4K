@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("StickRPG4K")]
 [assembly: AssemblyDescription("Steam launcher and configuration for the StickRPG4K mod")]
 [assembly: AssemblyProduct("StickRPG4K")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace StickRpg4k {
     public sealed class LauncherSettings {
@@ -68,7 +68,7 @@ namespace StickRpg4k {
             return Quote(Path.Combine(root, "game", "Zinc Shell Mac.swf")) + (fullscreen ? " --fullscreen" : " --width 1600 --height 900") +
                    " --quality high --scale show-all --force-scale --storage disk --save-directory " + Quote(Path.Combine(root, "saves")) +
                    " --config " + Quote(Path.Combine(root, "runtime", "config")) + " --cache-directory " + Quote(Path.Combine(root, "runtime", "cache")) +
-                   " --filesystem-access-mode allow --load-behavior delayed -P hdFPS=" + fps;
+                   " --filesystem-access-mode allow --open-url-mode deny --tcp-connections deny --load-behavior delayed -P hdFPS=" + fps;
         }
     }
     public static class SetupService {
@@ -128,7 +128,12 @@ namespace StickRpg4k {
             })) {
                 // Steam starts this EXE. Keep that process alive for the entire
                 // Ruffle session, including when the configuration window is closed.
-                game.WaitForExit();
+                try {
+                    using (EscMenuBridge menuKey = new EscMenuBridge(game.Id)) game.WaitForExit();
+                } catch {
+                    if (!game.HasExited) { game.Kill(); game.WaitForExit(); }
+                    throw;
+                }
                 return game.ExitCode;
             }
         }

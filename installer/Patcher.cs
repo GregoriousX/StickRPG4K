@@ -129,4 +129,65 @@ public static class StickRpg4kPatch {
                 throw new InvalidDataException("Rebuilt SWF length mismatch.");
         }
     }
+
+    // Copy original MP3 frames from the user's album. No decoding, resampling or
+    // re-encoding: retain the game's sample count and trim to the matching bar.
+    public static SR4KTag SoundtrackSound(SR4KTag original, string path, int startSample) {
+        if (original.Code != 14 || original.Data.Length < 9 || original.Data[2] != 47)
+            throw new InvalidDataException("Expected a 44.1 kHz stereo MP3 sound.");
+        if (startSample < 0) throw new InvalidDataException("Invalid soundtrack trim.");
+        byte[] mp3 = File.ReadAllBytes(path);
+        int position = 0;
+        if (mp3.Length >= 10 && Encoding.ASCII.GetString(mp3, 0, 3) == "ID3") {
+            int size = 0;
+            for (int i = 6; i < 10; i++) {
+                if (mp3[i] > 127) throw new InvalidDataException("Invalid ID3 size.");
+                size = checked((size << 7) | mp3[i]);
+            }
+            position = checked(size + 10 + ((mp3[5] & 16) != 0 ? 10 : 0));
+        }
+        List<int> offsets = new List<int>();
+        int[] bitrates = {0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0};
+        while (position + 4 <= mp3.Length) {
+            if (position + 128 == mp3.Length && Encoding.ASCII.GetString(mp3, position, 3) == "TAG") break;
+            uint h = ((uint)mp3[position] << 24) | ((uint)mp3[position + 1] << 16) |
+                     ((uint)mp3[position + 2] << 8) | mp3[position + 3];
+            int bitrate = bitrates[(h >> 12) & 15];
+            if ((h & 0xfffe0c00u) != 0xfffa0000u || bitrate == 0 || ((h >> 6) & 3) == 3)
+                throw new InvalidDataException("Expected MPEG-1 Layer III, 44.1 kHz stereo soundtrack.");
+            int length = 144000 * bitrate / 44100 + (int)((h >> 9) & 1);
+            if (position + length > mp3.Length) throw new InvalidDataException("Truncated MP3 frame.");
+            offsets.Add(position);
+            position += length;
+        }
+        offsets.Add(position);
+        int count = checked((int)BitConverter.ToUInt32(original.Data, 3));
+        // Ten frames warm up the MP3 bit reservoir and synthesis filters before
+        // the audible sample. Two trailing frames cover decoder latency.
+        int first = Math.Max(0, startSample / 1152 - 10);
+        int last = checked((startSample + count + 1151) / 1152 + 2);
+        if (last >= offsets.Count) throw new InvalidDataException("Soundtrack excerpt exceeds the source.");
+        int seek = startSample - first * 1152;
+        if (seek > Int16.MaxValue) throw new InvalidDataException("Soundtrack trim exceeds SWF range.");
+        byte[] data = new byte[9 + offsets[last] - offsets[first]];
+        Buffer.BlockCopy(original.Data, 0, data, 0, 7);
+        Buffer.BlockCopy(BitConverter.GetBytes((short)seek), 0, data, 7, 2);
+        Buffer.BlockCopy(mp3, offsets[first], data, 9, data.Length - 9);
+        if (first > 0) {
+            if ((data[10] & 1) == 0) throw new InvalidDataException("CRC-protected MP3 primer is unsupported.");
+            // An excerpt starts mid-reservoir. Silence only its first, inaudible
+            // pre-roll frame so every decoder emits it instead of dropping it.
+            // Keep the main-data bytes: following frames need that reservoir.
+            Array.Clear(data, 13, 32);
+        }
+        return new SR4KTag(14, data);
+    }
+
+    public static void WriteResizedSwf(string path, byte[] header, List<SR4KTag> tags) {
+        header = (byte[])header.Clone();
+        long length = header.Length;
+        foreach (SR4KTag tag in tags) length += (tag.Data.Length >= 63 ? 6 : 2) + tag.Data.Length;
+        Buffer.BlockCopy(BitConverter.GetBytes(checked((uint)length)), 0, header, 4, 4);
+        WriteSwf(path, header, tags);
+    }
 }

@@ -18,3 +18,6 @@
 *.log
 Thumbs.db
 Desktop.ini
+/dev/local/
+/dev/toolchain/
+__pycache__/

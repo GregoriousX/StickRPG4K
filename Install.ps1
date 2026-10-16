@@ -19,6 +19,59 @@ function Hash([string]$path) {
     finally { $stream.Dispose(); $algorithm.Dispose() }
 }
 
+Add-Type -Path (Join-Path $root 'installer\Patcher.cs')
+function UpdateSoundtrack([string]$folder, [string]$previousFolder) {
+    foreach($file in $manifest.files) {
+        if(-not $file.PSObject.Properties['soundtrack']) { continue }
+        $target = LocalPath $folder $file.path
+        $currentHash = Hash $target
+        if($currentHash -eq $file.soundtrack.sha256) {
+            Write-Output ('Album audio already installed: ' + $file.path)
+            continue
+        }
+        if($currentHash -ne $file.sha256) { throw ('Unexpected generated game file: ' + $file.path) }
+        $available = $true
+        $checked = @{}
+        foreach($replacement in $file.soundtrack.replacements) {
+            if($checked.ContainsKey($replacement.source)) { continue }
+            $source = LocalPath $root $replacement.source
+            if(-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Hash $source) -ne $replacement.sha256) { $available = $false; break }
+            $checked[$replacement.source] = $true
+        }
+        $previousSounds = $null
+        if(-not $available -and $previousFolder -and $file.soundtrack.PSObject.Properties['previous_sha256']) {
+            $previousPath = LocalPath $previousFolder $file.path
+            if((Test-Path -LiteralPath $previousPath) -and (Hash $previousPath) -eq $file.soundtrack.previous_sha256) {
+                $previousSounds = @{}
+                foreach($sound in [StickRpg4kPatch]::ReadTags($previousPath)) {
+                    if($sound.Code -eq 14) { $previousSounds[[int][BitConverter]::ToUInt16($sound.Data,0)] = $sound }
+                }
+            }
+        }
+        if(-not $available -and $null -eq $previousSounds) {
+            Write-Output ('Keeping embedded audio in ' + $file.path + ' (matching Steam Soundtrack files are not all present).')
+            continue
+        }
+        if($null -ne $previousSounds) { Write-Output ('Reusing verified album audio from the previous game: ' + $file.path) }
+        else { Write-Output ('Installing original-quality Soundtrack excerpts: ' + $file.path) }
+        $tags = [StickRpg4kPatch]::ReadTags($target)
+        foreach($replacement in $file.soundtrack.replacements) {
+            $index = [int]$replacement.index
+            if($tags[$index].Code -ne 14 -or [BitConverter]::ToUInt16($tags[$index].Data,0) -ne $replacement.id) { throw 'Unexpected soundtrack sound ID.' }
+            if($null -ne $previousSounds) { $tags[$index] = $previousSounds[[int]$replacement.id] }
+            else { $tags[$index] = [StickRpg4kPatch]::SoundtrackSound($tags[$index], (LocalPath $root $replacement.source), [int]$replacement.start_sample) }
+        }
+        $temporary = $target + '.sr4k-' + [Guid]::NewGuid().ToString('N')
+        try {
+            [StickRpg4kPatch]::WriteResizedSwf($temporary, [Convert]::FromBase64String($file.header), $tags)
+            if((Hash $temporary) -ne $file.soundtrack.sha256) { throw ('Soundtrack checksum mismatch: ' + $file.path) }
+            [IO.File]::Replace($temporary, $target, [NullString]::Value)
+        } finally {
+            if(Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+        }
+    }
+}
+
 $gameFolder = Join-Path $root 'game'
 $stampPath = Join-Path $gameFolder '.installed.json'
 if(Test-Path -LiteralPath $stampPath) {
@@ -26,9 +79,11 @@ if(Test-Path -LiteralPath $stampPath) {
     $ready = $stamp.version -eq $manifest.version
     foreach($file in $manifest.files) {
         $path = LocalPath $gameFolder $file.path
-        if(-not (Test-Path -LiteralPath $path) -or (Hash $path) -ne $file.sha256) { $ready = $false; break }
+        if(-not (Test-Path -LiteralPath $path)) { $ready = $false; break }
+        $currentHash = Hash $path
+        if($currentHash -ne $file.sha256 -and (-not $file.PSObject.Properties['soundtrack'] -or $currentHash -ne $file.soundtrack.sha256)) { $ready = $false; break }
     }
-    if($ready) { exit 0 }
+    if($ready) { UpdateSoundtrack $gameFolder; exit 0 }
 }
 
 Add-Type -Path (Join-Path $root 'installer\GameSource.cs')
@@ -54,7 +109,29 @@ if([IO.Path]::GetFullPath($original.DirectoryName).TrimEnd('\') -ne [IO.Path]::G
     throw 'Extract the complete release ZIP next to the original game EXE and run config.exe in that folder.'
 }
 if(Test-Path -LiteralPath $gameFolder) {
-    throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run config.exe again. Your saves are in saves\.'
+    # Upgrade only an intact, recognized generated game. User saves live outside
+    # this folder; unexpected files or edited assets prevent any replacement.
+    if(((Get-Item -LiteralPath $gameFolder -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Cannot upgrade a linked game folder.' }
+    if(-not (Test-Path -LiteralPath $stampPath)) { throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run config.exe again. Your saves are in saves\.' }
+    $oldStamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
+    $compatible = $null
+    if($manifest.PSObject.Properties['upgrade_from']) { $compatible = $manifest.upgrade_from.PSObject.Properties[$oldStamp.version] }
+    if($null -eq $compatible) { throw 'This generated game version cannot be upgraded automatically. Rename game\ and run config.exe again. Your saves are in saves\.' }
+    $expectedFiles = @('.installed.json') + @($manifest.files.path)
+    $gamePrefix = [IO.Path]::GetFullPath($gameFolder).TrimEnd('\') + '\'
+    foreach($entry in Get-ChildItem -LiteralPath $gameFolder -Recurse -Force) {
+        if(($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Cannot upgrade a game folder containing links.' }
+        if(-not $entry.PSIsContainer) {
+            $relative = $entry.FullName.Substring($gamePrefix.Length).Replace('\','/')
+            if($expectedFiles -notcontains $relative) { throw ('Unexpected file in generated game folder: ' + $relative) }
+        }
+    }
+    foreach($file in $manifest.files) {
+        $path = LocalPath $gameFolder $file.path
+        $accepted = $compatible.Value.PSObject.Properties[$file.path]
+        if($null -eq $accepted -or -not (Test-Path -LiteralPath $path) -or @($accepted.Value) -notcontains (Hash $path)) { throw ('Modified or incomplete generated game file: ' + $file.path) }
+    }
+    Write-Output 'Verified the previous generated game; preparing an automatic upgrade.'
 }
 if($manifest.format -ne 1) { throw 'Unsupported package version.' }
 Write-Output 'Checking prebuilt assets and patches...'
@@ -62,7 +139,6 @@ foreach($payload in $manifest.payloads.PSObject.Properties) {
     $path = LocalPath $root $payload.Name
     if((Hash $path) -ne $payload.Value) { throw ('Package checksum mismatch: ' + $payload.Name) }
 }
-Add-Type -Path (Join-Path $root 'installer\Patcher.cs')
 
 $workRoot = Join-Path $root '.install-work'
 $work = LocalPath $workRoot ([Guid]::NewGuid().ToString('N'))
@@ -140,8 +216,14 @@ try {
         }
         if((Hash $target) -ne $file.sha256) { throw ('Rebuilt file checksum mismatch: ' + $file.path) }
     }
+    UpdateSoundtrack $staging $gameFolder
     @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.Name} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
-    Move-Item -LiteralPath $staging -Destination $gameFolder
+    if(Test-Path -LiteralPath $gameFolder) {
+        $previousGame = LocalPath $work 'previous-game'
+        Move-Item -LiteralPath $gameFolder -Destination $previousGame
+        try { Move-Item -LiteralPath $staging -Destination $gameFolder }
+        catch { Move-Item -LiteralPath $previousGame -Destination $gameFolder; throw }
+    } else { Move-Item -LiteralPath $staging -Destination $gameFolder }
     Write-Output 'Mod files prepared.'
 } finally {
     if($null -ne $process) {
