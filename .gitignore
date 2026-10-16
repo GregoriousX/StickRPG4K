@@ -6,6 +6,8 @@
 /runtime/cache/
 *.exe
 !/runtime/ruffle.exe
+!/StickRPG4K.exe
+/launcher-settings.json
 *.swf
 *.sol
 *.log

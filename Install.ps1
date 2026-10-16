@@ -1,3 +1,5 @@
+param([string]$OriginalExe)
+
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $manifest = Get-Content -LiteralPath (Join-Path $root 'patches\manifest.json') -Raw | ConvertFrom-Json
@@ -29,10 +31,13 @@ if(Test-Path -LiteralPath $stampPath) {
     if($ready) { exit 0 }
 }
 
-$candidates = @(Get-ChildItem -LiteralPath $root -Filter '*.exe' -File)
-$originalFolder = Join-Path $root 'original'
-if(Test-Path -LiteralPath $originalFolder) {
-    $candidates += @(Get-ChildItem -LiteralPath $originalFolder -Filter '*.exe' -File)
+Add-Type -Path (Join-Path $root 'installer\GameSource.cs')
+$candidates = @()
+if($OriginalExe) {
+    if(-not (Test-Path -LiteralPath $OriginalExe -PathType Leaf)) { throw 'The selected original game EXE does not exist.' }
+    $candidates = @((Get-Item -LiteralPath $OriginalExe))
+} else {
+    $candidates = @([StickRpg4k.SourceDiscovery]::FindCandidates($root) | ForEach-Object { Get-Item -LiteralPath $_.Path })
 }
 $original = $null
 foreach($candidate in $candidates) {
@@ -40,7 +45,7 @@ foreach($candidate in $candidates) {
 }
 if($null -eq $original) {
     if($candidates.Count -eq 0) {
-        throw "Place your original Stick RPG 2 Director's Cut EXE next to Play.bat (or in original\), then run Play.bat again."
+        throw "Install Stick RPG 2 on Steam, or choose your original Stick RPG 2 Director's Cut.exe in the launcher."
     }
     throw ('The supplied EXE is not the supported original Director''s Cut build. Expected SHA-256: ' + $manifest.original_exe_sha256)
 }
@@ -131,7 +136,7 @@ try {
         }
         if((Hash $target) -ne $file.sha256) { throw ('Rebuilt file checksum mismatch: ' + $file.path) }
     }
-    @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
+    @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.FullName} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
     Move-Item -LiteralPath $staging -Destination $gameFolder
     Write-Output 'Installed. Starting StickRPG4K.'
 } finally {

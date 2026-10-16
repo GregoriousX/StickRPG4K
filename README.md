@@ -1,22 +1,25 @@
 # StickRPG4K
 
-Stick RPG 2 mod for Windows x64. **Your original Director's Cut EXE is required.**
+Stick RPG 2 mod for Windows x64. **Your original Steam / Director's Cut EXE is required.**
 Original game code is extracted locally; this repository contains patches,
 ready-made upscaled assets and the Ruffle runtime.
 
 ## Play
 
 1. Download and extract the ZIP, or clone this repository.
-2. Copy your original **Stick RPG 2 Director's Cut.exe** next to `Play.bat`
-   (or into an `original/` folder). The installer verifies the supported build.
-3. Double-click **Play.bat**, then choose **Play Offline** in the game.
+2. Open **StickRPG4K.exe**. It finds Steam copies across your Steam libraries.
+   If needed, use **Choose EXE...** to select **Stick RPG 2 Director's Cut.exe**.
+3. Choose motion smoothness and fullscreen or windowed mode, then click **Play**.
+   Choose **Play Offline** in the game.
 
 The first launch briefly runs the original EXE in the background, extracts its
 files and builds the mod in `game/`. No upscaling tools or Python installation
 are needed. The original EXE is left unchanged. Saves are kept in `saves/`.
 Press **Alt+Enter** to toggle fullscreen.
 
-Optional modes: `Play.bat 30`, `Play.bat 60 windowed`, `Play.bat 120`.
+The launcher remembers your choices. `Play.bat` opens the same menu.
+Tested with the installed Steam version (app 307640, build 297016).
+Steam files are read only; the mod and saves remain in this folder.
 
 ## Features
 
