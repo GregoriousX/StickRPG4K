@@ -16,14 +16,16 @@ The continuation archive's `CONTINUATION.json` records its exact Git commit.
   to F13. The SWF clicks the topmost visible Leave/Close button (phone, ID card,
   receipt, shops, dialogs, summaries, inventory, minigames); otherwise it opens the
   phone in the city, or forwards a normal Escape to the game (ATM keypad Cancel).
-- Unreleased fixes after 1.4.0 (data `wide4k-menu-fixes-2026-10-16`): the options
+- Unreleased fixes after 1.4.0 (data `wide4k-options-ui-2026-10-16`): the options
   panel no longer throws on open (QualitySlider lookup across domains), its
   background no longer covers the Save/Cheats tabs, Escape-to-Leave as above.
   Verified by the user in game: options, Save tab, Escape on phone/ID card/close_btn.
+- The phone Options screen is the original one (FULLSCREEN switch, QUALITY slider,
+  version); only the MUSIC/SFX on-off switches are replaced by volume sliders.
 - Music/SFX volume sliders reuse original QualitySlider artwork and persist separately
   from scene attenuation. Quality defaults to Ultra. Saves/load/Continue use the
   original local format without account prompts. Account service callbacks are disabled.
-- Manifest data version: `wide4k-menu-fixes-2026-10-16` (upgrades from 1.4.0). Installer upgrades only recognized
+- Manifest data version: `wide4k-options-ui-2026-10-16` (upgrades from 1.4.0). Installer upgrades only recognized
   generated files; unknown files and edited data block replacement. Saves are separate.
 - Original EXE SHA-256: `2bde20d37e45ea5ac1d517d55a89241250718f213f615982171aad28b9b56a06`.
   Steam app 307640, tested original build 297016. Ruffle nightly 2026-10-09.

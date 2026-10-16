@@ -108,86 +108,70 @@ package com.srpg2.hd {
             phone.CheatScreen.visible=event.currentTarget===phone.CheatButton;
             phone.LoginScreen.visible=false;phone.RegisterScreen.visible=false;
         }
-        private static function label(text:String,x:Number,y:Number,width:Number,size:int=11,color:uint=0x172229):TextField {
-            var field:TextField=new TextField();field.text=text;
-            field.x=x;field.y=y;field.width=width;field.height=size+9;
-            field.selectable=false;field.mouseEnabled=false;
-            field.defaultTextFormat=new TextFormat("_sans",size,color);
-            field.setTextFormat(field.defaultTextFormat);
-            return field;
-        }
-        private static function button(text:String,x:Number,y:Number,width:Number,action:Function):Sprite {
-            var item:Sprite=new Sprite();item.x=x;item.y=y;
-            item.graphics.beginFill(0x36464e);item.graphics.drawRoundRect(0,0,width,18,5);item.graphics.endFill();
-            item.addChild(label(text,3,0,width-4,10,0xffffff));item.buttonMode=true;item.mouseChildren=false;
-            item.addEventListener(MouseEvent.CLICK,function(event:MouseEvent):void {action();});
-            return item;
-        }
-        private static function slider(panel:Sprite,template:Object,name:String,title:String,y:Number,value:Number,change:Function,width:Number,steps:int=100):void {
-            if(title!="")panel.addChild(label(title,9,y,width-18,11));
+        private static function volumeSlider(template:Object,name:String,value:Number,change:Function,width:Number):Sprite {
             // QualitySlider lives in Minigames.swf's child domain, which this
             // dat.swf module cannot resolve by name; reuse the phone's own class.
             var sliderClass:Class=template.constructor as Class;
-            var track:Object=new sliderClass();track.name=name;
+            var track:Object=new sliderClass();
             var trackBounds:Rectangle=track.getBounds(track);
-            var scale:Number=(width-20)/trackBounds.width;
+            var scale:Number=width/trackBounds.width;
             track.scaleX=scale;track.scaleY=scale;
-            track.x=10-trackBounds.x*scale;track.y=y+23-trackBounds.y*scale;
-            var number:TextField=label("",width-45,y,40,10);panel.addChild(number);
+            track.x=-trackBounds.x*scale;track.y=-trackBounds.y*scale;
+            var holder:Sprite=new Sprite();holder.name=name;holder.addChild(DisplayObject(track));
             var dragStage:Stage;
-            var draw:Function=function(level:Number):void {
-                track.handle.x=5+123*level;
-                number.text=steps==100 ? Math.round(level*100)+"%" : "";
-            };
+            var draw:Function=function(level:Number):void {track.handle.x=5+123*level;};
             var move:Function=function(event:MouseEvent):void {
-                var level:Number=Math.round(clamp((track.mouseX-5)/123)*steps)/steps;
+                var level:Number=Math.round(clamp((track.mouseX-5)/123)*100)/100;
                 draw(level);change(level);event.updateAfterEvent();
             };
             var up:Function=function(event:MouseEvent):void {
                 if(dragStage){dragStage.removeEventListener(MouseEvent.MOUSE_MOVE,move);dragStage.removeEventListener(MouseEvent.MOUSE_UP,up);dragStage=null;}
             };
-            track.addEventListener(MouseEvent.MOUSE_DOWN,function(event:MouseEvent):void {
-                move(event);dragStage=track.stage;dragStage.addEventListener(MouseEvent.MOUSE_MOVE,move);dragStage.addEventListener(MouseEvent.MOUSE_UP,up);
+            holder.addEventListener(MouseEvent.MOUSE_DOWN,function(event:MouseEvent):void {
+                move(event);dragStage=holder.stage;dragStage.addEventListener(MouseEvent.MOUSE_MOVE,move);dragStage.addEventListener(MouseEvent.MOUSE_UP,up);
             });
-            track.addEventListener(Event.REMOVED_FROM_STAGE,function(event:Event):void {up(null);});
-            track.buttonMode=true;track.mouseChildren=false;draw(value);panel.addChild(track);
+            holder.addEventListener(Event.REMOVED_FROM_STAGE,function(event:Event):void {up(null);});
+            holder.buttonMode=true;holder.mouseChildren=false;draw(value);
+            return holder;
         }
+        private static function staticLabel(screen:MovieClip,y:Number):DisplayObject {
+            for(var i:int=0;i<screen.numChildren;i++) {
+                var child:DisplayObject=screen.getChildAt(i);
+                if(getQualifiedClassName(child)=="flash.text::StaticText" && Math.abs(child.y-y)<1)return child;
+            }
+            throw new Error("Options label not found at y="+y);
+        }
+        // Keep the original Options screen (FULLSCREEN switch, QUALITY slider,
+        // version); only the MUSIC/SFX on-off switches become volume sliders.
         public static function configurePhone(phone:Object,qualityChanged:Function,fullscreen:Function):void {
             load();if(phones[phone])return;phones[phone]=true;
             phone.LoginScreen.visible=false;phone.RegisterScreen.visible=false;
             var screen:MovieClip=phone.SoundScreen;
-            var panel:Sprite=new Sprite();panel.name="hdOptions";
-            // SoundScreen sits above the phone's tab buttons; the panel's
-            // background must not swallow clicks meant for Save/Cheats.
-            panel.mouseEnabled=false;
-            var i:int;
             try {
-                var bounds:Rectangle=screen.getBounds(screen);
-                trace("OFFLINE_OPTIONS bounds="+bounds+" phone="+phone.getBounds(phone));
-                panel.x=bounds.x;panel.y=bounds.y;
-                var width:Number=Math.max(170,bounds.width);var height:Number=Math.max(190,bounds.height);
-                panel.graphics.beginFill(0xc6cacb);panel.graphics.drawRect(0,0,width,height);panel.graphics.endFill();
-                panel.graphics.beginFill(0x00aabd);panel.graphics.drawRect(0,0,width,18);panel.graphics.endFill();
-                panel.addChild(label("Options",width/2-22,1,70,11,0xffffff));
-                slider(panel,screen.slider,"musicVolume","MUSIC",22,musicGain,setMusic,width);
-                slider(panel,screen.slider,"sfxVolume","SOUND EFFECTS",72,sfxGain,setSfx,width);
-                var fullscreenButton:Sprite=button("Fullscreen",10,125,width-20,function():void {fullscreen(null);});
-                panel.addChild(fullscreenButton);
-                panel.addChild(label("QUALITY",width/2-28,146,70,12));
-                var qualityNames:Array=["Low","Med.","High","Ultra"];
-                var qualityClass:Object=phone.constructor;
-                for(i=0;i<4;i++)panel.addChild(label(qualityNames[i].toUpperCase(),10+i*(width-16)/4,166,(width-20)/4,10));
-                slider(panel,screen.slider,"qualitySlider","",166,qualityClass.quality/3,function(value:Number):void {
-                    screen.slider.setSliderValue(Math.round(value*3));qualityChanged(null);
-                },width,3);
+                var rows:Array=[
+                    {label:staticLabel(screen,-74),toggle:screen.MusicSwitch,name:"musicVolume",value:musicGain,change:setMusic},
+                    {label:staticLabel(screen,-48),toggle:screen.SFXSwitch,name:"sfxVolume",value:sfxGain,change:setSfx}];
+                var labelRight:Number=-40;var gap:Number=6;
+                for each(var row:Object in rows) {
+                    var toggle:Rectangle=row.toggle.getBounds(screen);
+                    var left:Number=labelRight+gap;
+                    row.track=volumeSlider(screen.slider,row.name,row.value,row.change,toggle.right-left);
+                    var trackBounds:Rectangle=row.track.getBounds(row.track);
+                    row.track.x=left;
+                    row.track.y=toggle.y+toggle.height/2-trackBounds.height/2;
+                }
             } catch(error:Error) {
                 // Never block the phone: keep the original sound screen instead.
                 trace("OFFLINE_OPTIONS failed: "+error);
                 return;
             }
-            for(i=0;i<screen.numChildren;i++)screen.getChildAt(i).visible=false;
-            screen.addChild(panel);
-            trace("OFFLINE_OPTIONS ready music="+musicGain+" sfx="+sfxGain+" quality="+qualityClass.quality);
+            for each(row in rows) {
+                var text:DisplayObject=row.label;
+                text.x+=labelRight-text.getBounds(screen).right;
+                row.toggle.visible=false;row.toggle.mouseEnabled=false;
+                screen.addChild(row.track);
+            }
+            trace("OFFLINE_OPTIONS ready music="+musicGain+" sfx="+sfxGain+" quality="+phone.constructor.quality);
         }
 
         private static function play(sm:Object,sound:Sound,volume:Number,pan:Number,loops:int=0):Object {
