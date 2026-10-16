@@ -34,6 +34,7 @@ if(Test-Path -LiteralPath $stampPath) {
 Add-Type -Path (Join-Path $root 'installer\GameSource.cs')
 $candidates = @()
 if($OriginalExe) {
+    $OriginalExe = [StickRpg4k.SourceDiscovery]::ResolveOriginal($OriginalExe)
     if(-not (Test-Path -LiteralPath $OriginalExe -PathType Leaf)) { throw 'The selected original game EXE does not exist.' }
     $candidates = @((Get-Item -LiteralPath $OriginalExe))
 } else {
@@ -50,7 +51,7 @@ if($null -eq $original) {
     throw ('The supplied EXE is not the supported original Director''s Cut build. Expected SHA-256: ' + $manifest.original_exe_sha256)
 }
 if(Test-Path -LiteralPath $gameFolder) {
-    throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run Play.bat again. Your saves are in saves\.'
+    throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run config.exe again. Your saves are in saves\.'
 }
 if($manifest.format -ne 1) { throw 'Unsupported package version.' }
 Write-Output 'Checking prebuilt assets and patches...'
@@ -138,7 +139,7 @@ try {
     }
     @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.FullName} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
     Move-Item -LiteralPath $staging -Destination $gameFolder
-    Write-Output 'Installed. Starting StickRPG4K.'
+    Write-Output 'Mod files prepared.'
 } finally {
     if($null -ne $process) {
         if(-not $process.HasExited) { $process.Kill(); $process.WaitForExit(5000) | Out-Null }

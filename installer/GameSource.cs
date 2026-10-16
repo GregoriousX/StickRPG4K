@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
@@ -11,7 +12,25 @@ namespace StickRpg4k {
     }
     public static class SourceDiscovery {
         public const string OriginalFileName = "Stick RPG 2 Director's Cut.exe";
+        public const string BackupFileName = "stick.exe";
+        public const string OriginalSha256 = "2bde20d37e45ea5ac1d517d55a89241250718f213f615982171aad28b9b56a06";
         public const string SteamAppId = "307640";
+        public static string Hash(string path) {
+            using (SHA256 hash = SHA256.Create())
+            using (FileStream stream = File.OpenRead(path))
+                return BitConverter.ToString(hash.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+        }
+        public static bool IsOriginal(string path) {
+            return File.Exists(path) && Hash(path) == OriginalSha256;
+        }
+        public static string ResolveOriginal(string path) {
+            string full = System.IO.Path.GetFullPath(path);
+            if (String.Equals(System.IO.Path.GetFileName(full), OriginalFileName, StringComparison.OrdinalIgnoreCase)) {
+                string backup = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(full), BackupFileName);
+                if (!IsOriginal(full) && IsOriginal(backup)) return backup;
+            }
+            return full;
+        }
         private const string PairPattern = @"""(?<key>(?:\\.|[^""\\])*)""\s*""(?<value>(?:\\.|[^""\\])*)""";
         private static string Decode(string value) {
             return value.Replace("\\\\", "\\").Replace("\\\"", "\"");
@@ -64,7 +83,10 @@ namespace StickRpg4k {
                     if (File.Exists(manifest)) installDir = ReadValue(File.ReadAllText(manifest), "installdir") ?? installDir;
                     string game = System.IO.Path.GetFullPath(System.IO.Path.Combine(common, installDir, OriginalFileName));
                     string prefix = System.IO.Path.GetFullPath(common).TrimEnd('\\') + "\\";
-                    if (game.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && File.Exists(game)) AddPath(games, game);
+                    if (game.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) {
+                        game = ResolveOriginal(game);
+                        if (File.Exists(game)) AddPath(games, game);
+                    }
                 } catch (IOException) { } catch (UnauthorizedAccessException) { } catch (ArgumentException) { }
             }
             return games.ToArray();
@@ -77,9 +99,12 @@ namespace StickRpg4k {
             foreach (string folder in new[] { modRoot, System.IO.Path.Combine(modRoot, "original") }) {
                 if (!Directory.Exists(folder)) continue;
                 string preferred = System.IO.Path.Combine(folder, OriginalFileName);
+                preferred = ResolveOriginal(preferred);
                 if (File.Exists(preferred) && seen.Add(preferred)) results.Add(new GameSource { Path = preferred, Origin = "Local copy" });
                 foreach (string path in Directory.GetFiles(folder, "*.exe")) {
-                    if (String.Equals(System.IO.Path.GetFileName(path), "StickRPG4K.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                    string name = System.IO.Path.GetFileName(path);
+                    if (String.Equals(name, "StickRPG4K.exe", StringComparison.OrdinalIgnoreCase) ||
+                        String.Equals(name, "config.exe", StringComparison.OrdinalIgnoreCase)) continue;
                     if (seen.Add(path)) results.Add(new GameSource { Path = path, Origin = "Local copy" });
                 }
             }

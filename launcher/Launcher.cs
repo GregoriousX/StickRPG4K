@@ -2,54 +2,13 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
-using System.Reflection;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("StickRPG4K Launcher")]
-[assembly: AssemblyDescription("Launch settings and Steam game discovery for the StickRPG4K mod")]
-[assembly: AssemblyProduct("StickRPG4K")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
-
 namespace StickRpg4k {
-    public sealed class LauncherSettings {
-        public int Fps { get; set; }
-        public bool Fullscreen { get; set; }
-        public string OriginalExe { get; set; }
-        public LauncherSettings() { Fps = 60; Fullscreen = true; OriginalExe = ""; }
-        public static LauncherSettings Load(string root) {
-            try {
-                string file = Path.Combine(root, "launcher-settings.json");
-                if (File.Exists(file)) {
-                    LauncherSettings value = new JavaScriptSerializer().Deserialize<LauncherSettings>(File.ReadAllText(file));
-                    if (value != null) {
-                        if (value.Fps != 30 && value.Fps != 60 && value.Fps != 120) value.Fps = 60;
-                        return value;
-                    }
-                }
-            } catch (IOException) { } catch (ArgumentException) { } catch (InvalidOperationException) { }
-            return new LauncherSettings();
-        }
-        public void Save(string root) { File.WriteAllText(Path.Combine(root, "launcher-settings.json"), new JavaScriptSerializer().Serialize(this)); }
-    }
-    public static class LaunchCommand {
-        private static string Q(string value) { return "\"" + value.Replace("\"", "\\\"") + "\""; }
-        public static string InstallerArguments(string root, string original) {
-            return "-NoLogo -NoProfile -ExecutionPolicy Bypass -File " + Q(Path.Combine(root, "Install.ps1")) +
-                   (String.IsNullOrEmpty(original) ? "" : " -OriginalExe " + Q(original));
-        }
-        public static string RuffleArguments(string root, int fps, bool fullscreen) {
-            if (fps != 30 && fps != 60 && fps != 120) throw new ArgumentException("Unsupported motion setting.");
-            return Q(Path.Combine(root, "game", "Zinc Shell Mac.swf")) + (fullscreen ? " --fullscreen" : " --width 1600 --height 900") +
-                   " --quality high --scale show-all --force-scale --storage disk --save-directory " + Q(Path.Combine(root, "saves")) +
-                   " --config " + Q(Path.Combine(root, "runtime", "config")) + " --cache-directory " + Q(Path.Combine(root, "runtime", "cache")) +
-                   " --filesystem-access-mode allow --load-behavior delayed -P hdFPS=" + fps;
-        }
-    }
     public sealed class LauncherForm : Form {
         private readonly string root;
+        private readonly bool launchAfterSave;
         private readonly TextBox source = new TextBox();
         private readonly ComboBox motion = new ComboBox();
         private readonly ComboBox display = new ComboBox();
@@ -59,13 +18,16 @@ namespace StickRpg4k {
         private readonly Button browse = new Button();
         private readonly Button findSteam = new Button();
         private readonly Button play = new Button();
+        private readonly Button restore = new Button();
         private readonly ProgressBar progress = new ProgressBar();
         private bool busy;
         private readonly Color muted = Color.FromArgb(166, 177, 194);
-        public LauncherForm(string rootPath, string originalArgument) {
+        public LauncherForm(string rootPath, string originalArgument) : this(rootPath, originalArgument, false) { }
+        public LauncherForm(string rootPath, string originalArgument, bool continueToGame) {
             root = rootPath;
-            Text = "StickRPG4K";
-            ClientSize = new Size(608, 390);
+            launchAfterSave = continueToGame;
+            Text = "StickRPG4K settings";
+            ClientSize = new Size(608, 433);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -77,7 +39,7 @@ namespace StickRpg4k {
             Label title = AddLabel("StickRPG4K", 24, 17, 550, 35);
             title.Font = new Font("Segoe UI", 21, FontStyle.Bold);
             AddLabel("Widescreen. Ready-made 4K assets. Smoother motion.", 25, 57, 550, 21).ForeColor = muted;
-            AddLabel("Original game EXE", 24, 98, 550, 20);
+            AddLabel("Game EXE (original or stick.exe backup)", 24, 98, 550, 20);
             source.SetBounds(24, 122, 420, 27);
             source.ReadOnly = true;
             source.BackColor = Color.FromArgb(35, 43, 57);
@@ -106,16 +68,19 @@ namespace StickRpg4k {
             note.SetBounds(24, 276, 560, 35);
             note.ForeColor = muted;
             Controls.Add(note);
-            progress.SetBounds(24, 319, 560, 5);
+            progress.SetBounds(24, 365, 560, 5);
             progress.Style = ProgressBarStyle.Marquee;
             progress.MarqueeAnimationSpeed = 25;
             progress.Visible = false;
             Controls.Add(progress);
-            status.SetBounds(24, 337, 402, 40);
+            status.SetBounds(24, 319, 560, 40);
             status.ForeColor = muted;
             Controls.Add(status);
-            ConfigureButton(play, "Play", 448, 335, 136, 38, true);
-            play.TabIndex = 5;
+            ConfigureButton(restore, "Restore original EXE", 24, 382, 190, 34, false);
+            restore.TabIndex = 5;
+            restore.Click += RestoreClicked;
+            ConfigureButton(play, "Save & install", 394, 380, 190, 38, true);
+            play.TabIndex = 6;
             play.Click += PlayClicked;
             AcceptButton = play;
             FormClosing += delegate(object sender, FormClosingEventArgs args) { if (busy) args.Cancel = true; };
@@ -125,7 +90,7 @@ namespace StickRpg4k {
             if (!String.IsNullOrEmpty(originalArgument) && File.Exists(originalArgument)) SetSource(originalArgument, "Game copy selected.");
             else if (!String.IsNullOrEmpty(settings.OriginalExe) && File.Exists(settings.OriginalExe)) SetSource(settings.OriginalExe, "Saved game copy.");
             else FindSource(false);
-            status.Text = File.Exists(Path.Combine(root, "game", ".installed.json")) ? "Mod installed. Ready to play." : "First launch prepares the mod automatically.";
+            UpdateInstallationStatus();
         }
         private Label AddLabel(string text, int x, int y, int width, int height) {
             Label label = new Label { Text = text };
@@ -165,7 +130,14 @@ namespace StickRpg4k {
         private void UpdateNote() {
             note.Text = motion.SelectedIndex == 2 ? "Experimental: this Ruffle build supports up to about 100 smoothing updates/s." : "Smoother camera and movement without speeding up the game.";
         }
-        private void SetSource(string path, string message) { source.Text = Path.GetFullPath(path); sourceStatus.Text = message; }
+        private void SetSource(string path, string message) { source.Text = SourceDiscovery.ResolveOriginal(path); sourceStatus.Text = message; }
+        private string SelectedDirectory() { return String.IsNullOrEmpty(source.Text) ? "" : Path.GetDirectoryName(source.Text); }
+        private void UpdateInstallationStatus() {
+            bool installed = SteamIntegration.IsInstalled(root, SelectedDirectory());
+            restore.Enabled = installed;
+            play.Text = launchAfterSave ? "Save & play" : installed ? "Save settings" : "Save & install";
+            status.Text = installed ? "Installed. Use Play in Steam; config.exe changes these settings." : "Setup keeps the original as stick.exe and installs the Steam launcher.";
+        }
         private void FindSource(bool onlySteam) {
             if (onlySteam) {
                 string[] games = SourceDiscovery.FindSteamExecutables(SourceDiscovery.SteamRoots());
@@ -176,49 +148,28 @@ namespace StickRpg4k {
                 if (games.Length > 0) SetSource(games[0].Path, games[0].Origin == "Steam" ? "Steam copy found." : "Original game copy found.");
                 else sourceStatus.Text = "Choose your original Director's Cut EXE.";
             }
+            UpdateInstallationStatus();
         }
         private void BrowseClicked(object sender, EventArgs args) {
             using (OpenFileDialog dialog = new OpenFileDialog()) {
                 dialog.Title = "Choose the original Steam / Director's Cut EXE";
-                dialog.Filter = "Stick RPG 2 Director's Cut.exe|Stick RPG 2 Director's Cut.exe|Executable files (*.exe)|*.exe";
+                dialog.Filter = "Game EXE|Stick RPG 2 Director's Cut.exe;stick.exe|Executable files (*.exe)|*.exe";
                 dialog.CheckFileExists = true;
                 if (File.Exists(source.Text)) { dialog.InitialDirectory = Path.GetDirectoryName(source.Text); dialog.FileName = Path.GetFileName(source.Text); }
-                if (dialog.ShowDialog(this) == DialogResult.OK) SetSource(dialog.FileName, "Game copy selected.");
+                if (dialog.ShowDialog(this) == DialogResult.OK) { SetSource(dialog.FileName, "Game copy selected."); UpdateInstallationStatus(); }
             }
         }
         private void SetBusy(bool value) {
             busy = value;
             browse.Enabled = findSteam.Enabled = motion.Enabled = display.Enabled = play.Enabled = !value;
+            restore.Enabled = !value && SteamIntegration.IsInstalled(root, SelectedDirectory());
             ControlBox = !value;
             progress.Visible = value;
-            play.Text = value ? "Preparing..." : "Play";
+            if (value) play.Text = "Preparing..."; else UpdateInstallationStatus();
         }
         private void ProgressMessage(string text) {
             if (String.IsNullOrWhiteSpace(text) || IsDisposed || !IsHandleCreated) return;
             BeginInvoke((Action)delegate { if (!IsDisposed) status.Text = text; });
-        }
-        private void RunInstaller(string original) {
-            ProcessStartInfo info = new ProcessStartInfo {
-                FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
-                Arguments = LaunchCommand.InstallerArguments(root, original), WorkingDirectory = root,
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
-                RedirectStandardOutput = true, RedirectStandardError = true
-            };
-            using (Process process = new Process { StartInfo = info }) {
-                process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs args) { ProgressMessage(args.Data); };
-                process.Start();
-                Task<string> errors = process.StandardError.ReadToEndAsync();
-                process.BeginOutputReadLine();
-                process.WaitForExit();
-                if (process.ExitCode != 0) throw new InvalidOperationException(ShortError(errors.Result));
-            }
-        }
-        private static string ShortError(string output) {
-            if (output.IndexOf("not the supported original", StringComparison.OrdinalIgnoreCase) >= 0) return "This EXE is not the supported Director's Cut build. Choose the original Steam game EXE.";
-            if (output.IndexOf("folder exists", StringComparison.OrdinalIgnoreCase) >= 0) return "An older or incomplete game/ folder exists. Rename that generated folder, then try again. Your saves are in saves/.";
-            if (output.IndexOf("EXE does not exist", StringComparison.OrdinalIgnoreCase) >= 0) return "The original game EXE could not be found. Choose it again.";
-            string message = output.Trim();
-            return message.Length > 700 ? message.Substring(0, 700) : message;
         }
         internal LauncherSettings CurrentSettings() {
             return new LauncherSettings {
@@ -228,36 +179,73 @@ namespace StickRpg4k {
         }
         private async void PlayClicked(object sender, EventArgs args) {
             if (busy) return;
-            if (String.IsNullOrEmpty(source.Text) && !File.Exists(Path.Combine(root, "game", ".installed.json"))) { status.Text = "Choose the original game EXE first."; return; }
+            if (String.IsNullOrEmpty(source.Text)) { status.Text = "Choose the original game EXE first."; return; }
             LauncherSettings settings = CurrentSettings();
             SetBusy(true);
             status.Text = "Checking the installed mod...";
             try {
-                settings.Save(root);
-                await Task.Run(() => RunInstaller(settings.OriginalExe));
-                Directory.CreateDirectory(Path.Combine(root, "saves"));
-                Process.Start(new ProcessStartInfo {
-                    FileName = Path.Combine(root, "runtime", "ruffle.exe"), Arguments = LaunchCommand.RuffleArguments(root, settings.Fps, settings.Fullscreen),
-                    WorkingDirectory = Path.Combine(root, "game"), UseShellExecute = false
-                });
+                await Task.Run(() => SetupService.Prepare(root, settings, ProgressMessage));
+                SetSource(settings.OriginalExe, "Original preserved as stick.exe.");
                 SetBusy(false);
-                Close();
+                if (launchAfterSave) { DialogResult = DialogResult.OK; Close(); }
+                else status.Text = "Saved. Launch Stick RPG 2 from Steam. The menu stays in config.exe.";
             } catch (Exception error) {
                 SetBusy(false);
-                status.Text = "Could not start the game.";
+                status.Text = "Could not save or install the mod.";
+                MessageBox.Show(this, error.Message, "StickRPG4K", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private async void RestoreClicked(object sender, EventArgs args) {
+            if (busy) return;
+            string directory = SelectedDirectory();
+            SetBusy(true);
+            try {
+                await Task.Run(() => SteamIntegration.Restore(root, directory));
+                LauncherSettings settings = CurrentSettings();
+                settings.OriginalExe = Path.Combine(directory, SourceDiscovery.OriginalFileName);
+                settings.GameDirectory = "";
+                settings.Save(root);
+                SetSource(settings.OriginalExe, "Original EXE restored.");
+                SetBusy(false);
+                status.Text = "Original restored. Steam starts the unmodified game. Saves are preserved.";
+            } catch (Exception error) {
+                SetBusy(false);
                 MessageBox.Show(this, error.Message, "StickRPG4K", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }
-    internal static class Program {
+    internal static class ConfigProgram {
         [STAThread]
-        private static void Main(string[] args) {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            string original = null;
-            foreach (string argument in args)
-                if (String.Equals(Path.GetFileName(argument), SourceDiscovery.OriginalFileName, StringComparison.OrdinalIgnoreCase)) { original = argument; break; }
-            Application.Run(new LauncherForm(AppDomain.CurrentDomain.BaseDirectory, original));
+        private static int Main(string[] args) {
+            string root = AppDomain.CurrentDomain.BaseDirectory;
+            bool headless = Array.IndexOf(args, "--install") >= 0 || Array.IndexOf(args, "--restore") >= 0;
+            try {
+                root = ModLocation.Resolve(root);
+                string original = null;
+                foreach (string argument in args)
+                    if (String.Equals(Path.GetFileName(argument), SourceDiscovery.OriginalFileName, StringComparison.OrdinalIgnoreCase) ||
+                        String.Equals(Path.GetFileName(argument), SourceDiscovery.BackupFileName, StringComparison.OrdinalIgnoreCase)) { original = argument; break; }
+                int installOption = Array.IndexOf(args, "--install");
+                if (installOption >= 0 && installOption + 1 < args.Length && !args[installOption + 1].StartsWith("--")) original = Path.GetFullPath(args[installOption + 1]);
+                if (headless) {
+                    LauncherSettings settings = LauncherSettings.Load(root);
+                    if (original != null) settings.OriginalExe = original;
+                    if (Array.IndexOf(args, "--restore") >= 0) {
+                        SteamIntegration.Restore(root, settings.GameDirectory);
+                        settings.OriginalExe = Path.Combine(settings.GameDirectory, SourceDiscovery.OriginalFileName);
+                        settings.GameDirectory = "";
+                        settings.Save(root);
+                    } else SetupService.Prepare(root, settings, Console.WriteLine);
+                    return 0;
+                }
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                bool continueToGame = Array.IndexOf(args, "--launch-after-save") >= 0;
+                using (LauncherForm form = new LauncherForm(root, original, continueToGame)) {
+                    Application.Run(form);
+                    return continueToGame && form.DialogResult != DialogResult.OK ? 2 : 0;
+                }
+            } catch (Exception error) { ModLocation.ReportError(root, error, !headless); return 1; }
         }
     }
 }
