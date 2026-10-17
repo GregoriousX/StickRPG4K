@@ -1,6 +1,6 @@
 # StickRPG4K — continuation state
 
-Current implementation: **1.5.0**, 17 October 2026. See `DEVELOPMENT.md` first.
+Current implementation: **1.5.1**, 17 October 2026. See `DEVELOPMENT.md` first.
 The continuation archive's `CONTINUATION.json` records its exact Git commit.
 
 - Windows portable mod; every runtime resource, generated game, setting and save
@@ -34,7 +34,7 @@ The continuation archive's `CONTINUATION.json` records its exact Git commit.
 - Music/SFX volume sliders reuse original QualitySlider artwork and persist separately
   from scene attenuation. Quality defaults to Ultra. Saves/load/Continue use the
   original local format without account prompts. Account service callbacks are disabled.
-- Manifest data version: `wide4k-1.5.0-2026-10-17` (upgrades from 1.4.0 and the 1.4.x fixes). Installer upgrades only recognized
+- Manifest data version: `wide4k-1.5.1-2026-10-17` (upgrades from 1.4.0, 1.4.x fixes and 1.5.0). Installer upgrades only recognized
   generated files; unknown files and edited data block replacement. Saves are separate.
 - Original EXE SHA-256: `2bde20d37e45ea5ac1d517d55a89241250718f213f615982171aad28b9b56a06`.
   Steam app 307640, tested original build 297016. Ruffle nightly 2026-10-16.

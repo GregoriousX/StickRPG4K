@@ -136,9 +136,11 @@
             var space:DisplayObject=DisplayObject(main);
             for(var i:int=0;i<container.numChildren;i++) {
                 var child:DisplayObject=container.getChildAt(i);
-                if(child is Shape) {
+                // Plain shapes, or art clips named *Background* (the phone's dimmed city).
+                if(child is Shape || child.name.indexOf("Background")>=0) {
                     var bounds:Rectangle=child.getBounds(space);
-                    if(bounds.width<700 || bounds.width>760 || bounds.height<430 || Math.abs(bounds.x)>12)continue;
+                    // Must cover the old 720-wide stage but not yet the 800-wide one.
+                    if(bounds.height<430 || bounds.width<700 || bounds.width>=799 || bounds.x>20 || bounds.right<700)continue;
                     child.scaleX*=800/bounds.width;
                     child.x+=-40-child.getBounds(space).x;
                 } else if(depth<2 && child is DisplayObjectContainer && !(child is SimpleButton))

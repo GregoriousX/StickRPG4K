@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("StickRPG4K")]
 [assembly: AssemblyDescription("Steam launcher and configuration for the StickRPG4K mod")]
 [assembly: AssemblyProduct("StickRPG4K")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 
 namespace StickRpg4k {
     public sealed class LauncherSettings {

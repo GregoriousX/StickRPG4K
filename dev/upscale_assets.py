@@ -11,9 +11,14 @@ Categories:
   scene  bitmaps of 400 px or more (backgrounds, panoramas) with Remacri.
 Factors are capped so no bitmap exceeds 4096 px; fill matrices are divided accordingly.
 
+Hand-made replacements: dev/overrides/<swf stem>_<bitmap id>.png (4x the original size,
+RGBA) replace the model output for that bitmap. `override` applies them to files whose
+upscale steps already exist, writing assets/<swf>-04.bin.
+
 Stages (all intermediate files stay in dev/local/upscale):
   extract   decode originals to PNG and write plan.json
   upscale   run Real-ESRGAN (dev/toolchain, never committed)
+  override  apply dev/overrides to already upscaled files (needs --version)
   build     write assets/<swf>-03.bin and update recipes/hashes in
             patches/manifest.json (preview unless --apply)
 build needs the current HQ installation in game/ matching patches/manifest.json.
@@ -203,8 +208,9 @@ def build(version, apply):
         for item in plan[name]:
             code, body = original[item['index']]
             base = work/'x4'/item['category']/('%s_%d' % (stem, item['id']))
-            image = Image.open(str(base)+'.png').convert('RGBA')
-            if (work/'src'/item['category']/('%s_%d.alpha.png' % (stem, item['id']))).exists():
+            override = root/'dev/overrides'/('%s_%d.png' % (stem, item['id']))
+            image = Image.open(str(override if override.exists() else str(base)+'.png')).convert('RGBA')
+            if not override.exists() and (work/'src'/item['category']/('%s_%d.alpha.png' % (stem, item['id']))).exists():
                 image.putalpha(Image.open(str(base)+'.alpha.png').convert('L'))
             w, h = item['size']; k = item['factor']
             if image.size != (w*4, h*4): raise SystemExit('Unexpected upscale size for %s %d' % (name, item['id']))
@@ -272,12 +278,59 @@ def build(version, apply):
         manifest_path.write_bytes(preview.read_bytes()); print('Updated packs and patches/manifest.json. Run config.exe --install.')
     else: print('Preview:', preview)
 
+def override(version, apply):
+    """Swap hand-made images into existing optional upscale steps and rehash."""
+    from PIL import Image
+    manifest_path = root/'patches/manifest.json'
+    old = json.loads(manifest_path.read_text()); manifest = copy.deepcopy(old)
+    if version == old['version']: raise SystemExit('Use a new data version.')
+    changed_files = 0
+    for name in FILES:
+        entry, original, tables = load(manifest, name)
+        stem = Path(name).stem
+        files = sorted((root/'dev/overrides').glob('%s_*.png' % stem))
+        if not files or not upscaled(entry): continue
+        pack_path = 'assets/%s-04.bin' % stem; pack = bytearray(); swaps = {}
+        for path in files:
+            cid = int(path.stem.rsplit('_', 1)[1])
+            index = next(i for i, (c, d) in enumerate(original) if c in BITMAP_CODES and struct.unpack_from('<H', d)[0] == cid)
+            code, body = original[index]; w, h = decode(code, body, tables).size
+            image = Image.open(path).convert('RGBA')
+            if image.size != (w*4, h*4): raise SystemExit('%s must be %dx%d' % (path.name, w*4, h*4))
+            step = next(s for s in entry['tags'] if isinstance(s, dict) and s.get('option') == 'upscale' and s['original'] == index)
+            new_code, new_body = encode(code, cid, image)
+            swaps[index] = (step, new_code, new_body)
+        installed = (root/'game'/name).read_bytes()
+        if sha(installed) != entry['soundtrack']['sha256']:
+            raise SystemExit('Install the current upscaled HQ build before overriding: '+name)
+        header, tags = swf_parts(installed)
+        sounds = {struct.unpack_from('<H', d)[0]: (c, d) for c, d in original if c == 14}
+        for position, step in enumerate(entry['tags']):
+            if isinstance(step, dict) and step.get('option') == 'upscale' and step['original'] in swaps:
+                _, new_code, new_body = swaps[step['original']]
+                step.update({'asset': pack_path, 'offset': len(pack), 'length': len(new_body), 'code': new_code})
+                pack += new_body; tags[position] = (new_code, new_body)
+        baseline_tags = list(tags)
+        for item in entry['soundtrack']['replacements']: baseline_tags[item['index']] = sounds[item['id']]
+        baseline = serialize(header, baseline_tags)
+        entry['sha256'], entry['header'] = sha(baseline), base64.b64encode(baseline[:len(header)]).decode()
+        entry['soundtrack']['previous_sha256'] = entry['soundtrack']['sha256']
+        entry['soundtrack']['sha256'] = sha(serialize(header, tags))
+        manifest['payloads'][pack_path] = sha(bytes(pack))
+        if apply: (root/pack_path).write_bytes(bytes(pack))
+        print('%s: %d overrides -> %s' % (name, len(swaps), pack_path)); changed_files += 1
+    if not changed_files: print('No overrides to apply.'); return
+    manifest.setdefault('upgrade_from', {})[old['version']] = {f['path']: known_hashes(f) for f in old['files']}
+    manifest['version'] = version
+    preview = root/'dev/local/manifest-preview.json'; preview.write_text(json.dumps(manifest, separators=(',', ':')), encoding='utf8')
+    if apply: manifest_path.write_bytes(preview.read_bytes()); print('Updated patches/manifest.json. Run config.exe --install.')
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('stage', choices=['extract', 'upscale', 'build'])
+    p.add_argument('stage', choices=['extract', 'upscale', 'build', 'override'])
     p.add_argument('--version'); p.add_argument('--apply', action='store_true')
     a = p.parse_args()
-    if a.stage == 'build':
-        if not a.version: p.error('build needs --version')
-        build(a.version, a.apply)
+    if a.stage in ('build', 'override'):
+        if not a.version: p.error(a.stage+' needs --version')
+        (build if a.stage == 'build' else override)(a.version, a.apply)
     else: globals()[a.stage]()

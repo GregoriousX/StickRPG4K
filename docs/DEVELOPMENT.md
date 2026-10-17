@@ -66,7 +66,10 @@ the former AI packs `-01/-02` (rebane2001 upsies and re-upscales of them) were d
 icons and scenes/backgrounds (400 px or more) with Remacri, other shape-drawn UI with
 realesrgan-x4plus-anime, up to 4x and at most 4096 px. All `-03` steps are optional
 (`option: upscale`); `Install.ps1 -NoUpscale` / the config checkbox keeps originals.
-JPEG3 colour is premultiplied: decode/encode through `dev/swf_bitmaps.py` only. Upscalers and models live only in ignored `dev/toolchain/` (official
+JPEG3 colour is premultiplied: decode/encode through `dev/swf_bitmaps.py` only.
+Hand-made replacements live in `dev/overrides/<swf>_<id>.png` (4x the original size, RGBA)
+and win over the model output; for already upscaled files run `upscale_assets.py override`
+(writes `assets/<swf>-04.bin`). Example: the apartment poster, Minigames bitmap 654. Upscalers and models live only in ignored `dev/toolchain/` (official
 Real-ESRGAN ncnn release, Upscayl model repos); never commit them, only the packs.
 Run `build` against the committed manifest's HQ installation. Pillow/numpy go in an
 ignored venv (`dev/local/venv`). Real-ESRGAN's directory mode corrupts mixed-size
