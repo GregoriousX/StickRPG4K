@@ -22,11 +22,17 @@ def serialize(header, tags):
     return b'FWS'+header[3:4]+struct.pack('<I', len(body)+8)+body
 payloads = {}
 report = []
+def asset(step):
+    with open(root/step['asset'], 'rb') as f:
+        f.seek(step['offset']); return (step['code'], f.read(step['length']))
 for file in manifest['files']:
     if file.get('copy'): continue
     installed = (args.game/file['path']).read_bytes()
-    is_hq = 'soundtrack' in file and sha(installed) == file['soundtrack']['sha256']
-    if sha(installed) != file['sha256'] and not is_hq:
+    plain = file.get('variants', {}).get('no-upscale')
+    hq_hashes = [h for h in (file.get('soundtrack', {}).get('sha256'), plain and plain.get('soundtrack_sha256')) if h]
+    base_hashes = [file['sha256']] + ([plain['sha256']] if plain else [])
+    is_hq = sha(installed) in hq_hashes
+    if sha(installed) not in base_hashes and not is_hq:
         raise SystemExit('Unrecognized generated file: '+file['path'])
     header, tags = swf_parts(installed)
     changed = False
@@ -40,32 +46,42 @@ for file in manifest['files']:
         payloads[step['addon']] = abc
         changed = True
     if not changed: continue
-    baseline_tags = list(tags)
-    if is_hq:
-        original_data = (args.originals/file['source']).read_bytes()
-        if sha(original_data) != manifest['sources'][file['source']]['sha256']:
-            raise SystemExit('Original file checksum mismatch: '+file['source'])
-        _, original_tags = swf_parts(original_data)
-        sounds = {struct.unpack_from('<H', d)[0]:(c,d) for c,d in original_tags if c==14}
-        for replacement in file['soundtrack']['replacements']:
+    if 'soundtrack' in file and not is_hq:
+        # A baseline alone cannot reconstruct album frames. Supply a known
+        # HQ installation to preview/apply both variants without ambiguity.
+        raise SystemExit('Use an installation with the matching Soundtrack installed for '+file['path'])
+    original_data = (args.originals/file['source']).read_bytes()
+    if sha(original_data) != manifest['sources'][file['source']]['sha256']:
+        raise SystemExit('Original file checksum mismatch: '+file['source'])
+    _, original_tags = swf_parts(original_data)
+    sounds = {struct.unpack_from('<H', d)[0]:(c,d) for c,d in original_tags if c==14}
+    def hashes(hq_tags):
+        baseline_tags = list(hq_tags)
+        for replacement in file.get('soundtrack', {}).get('replacements', []):
             baseline_tags[replacement['index']] = sounds[replacement['id']]
-    baseline = serialize(header, baseline_tags)
-    file['sha256'] = sha(baseline)
-    file['header'] = base64.b64encode(baseline[:len(header)]).decode()
+        baseline = serialize(header, baseline_tags)
+        return sha(baseline), base64.b64encode(baseline[:len(header)]).decode(), sha(serialize(header, hq_tags))
+    # Optional upscale steps: rebuild both variants from whichever one is installed.
+    up_tags, plain_tags = list(tags), list(tags)
+    for index, step in enumerate(file['tags']):
+        if isinstance(step, dict) and step.get('option') == 'upscale':
+            up_tags[index] = asset(step); plain_tags[index] = original_tags[step['original']]
+    file['sha256'], file['header'], hq = hashes(up_tags)
     if 'soundtrack' in file:
-        old_hq_hash = file['soundtrack']['sha256']
-        hq_tags = list(tags)
-        if not is_hq:
-            # A baseline alone cannot reconstruct album frames. Supply a known
-            # HQ installation to preview/apply both variants without ambiguity.
-            raise SystemExit('Use an installation with the matching Soundtrack installed for '+file['path'])
-        file['soundtrack']['previous_sha256'] = old_hq_hash
-        file['soundtrack']['sha256'] = sha(serialize(header, hq_tags))
+        file['soundtrack']['previous_sha256'] = file['soundtrack']['sha256']
+        file['soundtrack']['sha256'] = hq
+    if plain:
+        plain['sha256'], plain['header'], plain_hq = hashes(plain_tags)
+        if 'soundtrack' in file: plain['soundtrack_sha256'] = plain_hq
     report.append({'file':file['path'], 'baseline_sha256':file['sha256'], 'hq_sha256':file.get('soundtrack',{}).get('sha256')})
 if not report:
     print('No addon changes.'); raise SystemExit(0)
-manifest.setdefault('upgrade_from', {})[old['version']] = {
-    f['path']:[f['sha256']]+([f['soundtrack']['sha256']] if 'soundtrack' in f else []) for f in old['files']}
+def known(f):
+    values = [f['sha256']] + ([f['soundtrack']['sha256']] if 'soundtrack' in f else [])
+    for v in f.get('variants', {}).values():
+        values += [v['sha256']] + ([v['soundtrack_sha256']] if 'soundtrack_sha256' in v else [])
+    return values
+manifest.setdefault('upgrade_from', {})[old['version']] = {f['path']: known(f) for f in old['files']}
 manifest['version'] = args.version
 for path, data in payloads.items(): manifest['payloads'][path] = sha(data)
 preview = root/'dev/local/manifest-preview.json'

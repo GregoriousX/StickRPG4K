@@ -1,4 +1,4 @@
-package com.srpg2.hd {
+﻿package com.srpg2.hd {
     import flash.display.*;
     import flash.events.*;
     import flash.geom.Rectangle;
@@ -7,6 +7,8 @@ package com.srpg2.hd {
     import flash.system.ApplicationDomain;
     import flash.text.*;
     import flash.utils.Dictionary;
+    import flash.utils.Timer;
+    import flash.utils.getTimer;
     import flash.utils.getQualifiedClassName;
 
     public class Preferences {
@@ -48,7 +50,111 @@ package com.srpg2.hd {
         }
         public static function attach(game:Object):void {
             load();main=game;
-            game.stage.addEventListener(KeyboardEvent.KEY_DOWN,keyDown,false,10000,true);
+            game.stage.addEventListener(KeyboardEvent.KEY_DOWN,keyDown,false,10000);
+            game.stage.addEventListener(Event.ADDED_TO_STAGE,iconAdded,true);
+            game.stage.addEventListener(Event.ADDED_TO_STAGE,overlayAdded,true);
+            game.stage.addEventListener(Event.ENTER_FRAME,combatWatch);
+            startFullscreen(game);
+        }
+        // Ruffle's --fullscreen does not always stick at startup; the launcher
+        // also passes hdFullscreen=1 and the game requests it once it is running.
+        private static function startFullscreen(game:Object):void {
+            try {if(game.stage.root.loaderInfo.parameters.hdFullscreen!="1")return;}catch(error:Error){return;}
+            var request:Function=function():void {
+                try {if(game.stage.displayState=="normal")game.stage.displayState="fullScreenInteractive";}catch(error:Error){}
+            };
+            request();
+            var retry:Timer=new Timer(500,4);
+            retry.addEventListener(TimerEvent.TIMER,function(event:TimerEvent):void {request();});
+            retry.start();
+        }
+        // Full-screen dimmers inside these overlays were drawn for the original
+        // 720-wide stage; stretch only their plain background shapes to 800.
+        private static const OVERLAYS:Object={"com.srpg2::StatsCard":true,"inventory_mc":true,"receipt_mc":true,
+            "ErrorScreen":true,"com.srpg2::XPhone":true,"com.srpg2::AchievementScreen":true};
+        private static var widened:Dictionary=new Dictionary(true);
+        // ASBContainer.init() sets width/height to 100 while it still shows its
+        // 71x69 placeholder; Flash ignored that on the empty component, Ruffle
+        // stretches the whole 720x450 combat view by 1.41x1.45. Keep it 1:1.
+        // Listeners hold strong references: weak ones to static method closures
+        // or anonymous functions are collected and silently stop firing.
+        // Each frame: hook the combat container (it can exist before attach()),
+        // and while the timeline is on "combat" hide the city world underneath.
+        // Ruffle builds draw commands for it on the CPU even when fully covered.
+        private static var combatHooked:Dictionary=new Dictionary(true);
+        private static var hiddenForCombat:Array=[];
+        private static var combatFound:Boolean=false;
+        private static var smoothingSuspended:Boolean=false;
+        private static var lastSearch:int=-100000;
+        private static function findCombat(node:DisplayObjectContainer,depth:int):void {
+            for(var i:int=0;i<node.numChildren;i++) {
+                var child:DisplayObject=node.getChildAt(i);
+                if(getQualifiedClassName(child)=="ASBContainer") {
+                    if(!combatHooked[child]) {
+                        combatHooked[child]=true;combatFound=true;
+                        keepCombatScale(child);
+                    }
+                } else if(depth<4 && child is DisplayObjectContainer && !(child is Loader))
+                    findCombat(DisplayObjectContainer(child),depth+1);
+            }
+        }
+        private static function combatWatch(event:Event):void {
+            if(!main || !main.stage)return;
+            var label:String=main.currentLabel;
+            if(!combatFound && getTimer()-lastSearch>1000) {
+                lastSearch=getTimer();
+                findCombat(main.stage,0);
+            }
+            var inCombat:Boolean=label=="combat";
+            if(inCombat!=smoothingSuspended) {
+                smoothingSuspended=inCombat;
+                try {ApplicationDomain.currentDomain.getDefinition("com.srpg2.hd.SmoothWide").suspend(inCombat);}catch(error:Error){}
+            }
+            if(inCombat) {
+                for each(var name:String in ["world","parallax_bg"]) {
+                    var layer:DisplayObject=main.hasOwnProperty(name) ? main[name] as DisplayObject : null;
+                    if(layer && layer.visible && hiddenForCombat.indexOf(layer)<0){layer.visible=false;hiddenForCombat.push(layer);}
+                }
+            } else if(hiddenForCombat.length) {
+                for each(var hidden:DisplayObject in hiddenForCombat)hidden.visible=true;
+                hiddenForCombat=[];
+            }
+        }
+        private static function keepCombatScale(container:DisplayObject):void {
+            container.addEventListener(Event.ENTER_FRAME,function(event:Event):void {
+                if(container.scaleX!=1 || container.scaleY!=1){container.scaleX=1;container.scaleY=1;}
+            });
+        }
+        private static function overlayAdded(event:Event):void {
+            var overlay:DisplayObjectContainer=event.target as DisplayObjectContainer;
+            if(!overlay || !main || overlay.parent!==main || widened[overlay])return;
+            if(OVERLAYS[getQualifiedClassName(overlay)]!==true && overlay.name!="infoPanel")return;
+            widened[overlay]=true;
+            widenBackgrounds(overlay,0);
+        }
+        private static function widenBackgrounds(container:DisplayObjectContainer,depth:int):void {
+            var space:DisplayObject=DisplayObject(main);
+            for(var i:int=0;i<container.numChildren;i++) {
+                var child:DisplayObject=container.getChildAt(i);
+                if(child is Shape) {
+                    var bounds:Rectangle=child.getBounds(space);
+                    if(bounds.width<700 || bounds.width>760 || bounds.height<430 || Math.abs(bounds.x)>12)continue;
+                    child.scaleX*=800/bounds.width;
+                    child.x+=-40-child.getBounds(space).x;
+                } else if(depth<2 && child is DisplayObjectContainer && !(child is SimpleButton))
+                    widenBackgrounds(DisplayObjectContainer(child),depth+1);
+            }
+        }
+        // dat-03.bin replaces the 65x65 item icons with 4x versions. The game
+        // sizes code-created icon Bitmaps from their pixels, so draw them at the
+        // original size; inventory timeline placements are pre-scaled.
+        private static const ICON_SIZE:int = 260;
+        private static const ICON_SCALE:Number = 0.25;
+        private static function iconAdded(event:Event):void {
+            var bitmap:Bitmap=event.target as Bitmap;
+            if(!bitmap || !bitmap.bitmapData || bitmap.bitmapData.width!=ICON_SIZE || bitmap.bitmapData.height!=ICON_SIZE)return;
+            bitmap.smoothing=true;
+            if(bitmap.scaleX==1 && bitmap.scaleY==1){bitmap.scaleX=ICON_SCALE;bitmap.scaleY=ICON_SCALE;}
         }
         private static var forwarding:Boolean = false;
         private static function keyDown(event:KeyboardEvent):void {
@@ -69,7 +175,8 @@ package com.srpg2.hd {
         }
         // Instance names and classes the original game uses for Leave/Close.
         private static const LEAVE_NAMES:Object={leave_btn:true,close_btn:true,id_close_btn:true,
-            receipt_close_btn:true,closeAction:true,LeaveButton:true,leaveButton:true};
+            receipt_close_btn:true,closeAction:true,LeaveButton:true,leaveButton:true,
+            infoPanel:true};  // locked/closed/ID notices close on any click
         private static function findLeave(node:DisplayObject):InteractiveObject {
             if(!node.visible)return null;
             var found:InteractiveObject=null;

@@ -1,4 +1,4 @@
-param([string]$OriginalExe)
+param([string]$OriginalExe, [switch]$NoUpscale)
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
@@ -20,16 +20,41 @@ function Hash([string]$path) {
 }
 
 Add-Type -Path (Join-Path $root 'installer\Patcher.cs')
+$upscale = -not $NoUpscale
+# Expected hashes for the chosen variant; -NoUpscale keeps the original bitmaps
+# wherever a recipe step is marked option=upscale.
+function Expected($file) {
+    $plain = $null
+    if(-not $upscale -and $file.PSObject.Properties['variants'] -and $file.variants.PSObject.Properties['no-upscale']) { $plain = $file.variants.'no-upscale' }
+    if($null -ne $plain) {
+        $hq = $null; if($plain.PSObject.Properties['soundtrack_sha256']) { $hq = $plain.soundtrack_sha256 }
+        return @{ sha256 = $plain.sha256; header = $plain.header; hq = $hq }
+    }
+    $hq = $null; if($file.PSObject.Properties['soundtrack']) { $hq = $file.soundtrack.sha256 }
+    return @{ sha256 = $file.sha256; header = $file.header; hq = $hq }
+}
+function KnownHashes($file) {
+    $values = @($file.sha256)
+    if($file.PSObject.Properties['soundtrack']) { $values += $file.soundtrack.sha256 }
+    if($file.PSObject.Properties['variants']) {
+        foreach($variant in $file.variants.PSObject.Properties) {
+            $values += $variant.Value.sha256
+            if($variant.Value.PSObject.Properties['soundtrack_sha256']) { $values += $variant.Value.soundtrack_sha256 }
+        }
+    }
+    return $values
+}
 function UpdateSoundtrack([string]$folder, [string]$previousFolder) {
     foreach($file in $manifest.files) {
         if(-not $file.PSObject.Properties['soundtrack']) { continue }
         $target = LocalPath $folder $file.path
+        $expected = Expected $file
         $currentHash = Hash $target
-        if($currentHash -eq $file.soundtrack.sha256) {
+        if($currentHash -eq $expected.hq) {
             Write-Output ('Album audio already installed: ' + $file.path)
             continue
         }
-        if($currentHash -ne $file.sha256) { throw ('Unexpected generated game file: ' + $file.path) }
+        if($currentHash -ne $expected.sha256) { throw ('Unexpected generated game file: ' + $file.path) }
         $available = $true
         $checked = @{}
         foreach($replacement in $file.soundtrack.replacements) {
@@ -39,9 +64,12 @@ function UpdateSoundtrack([string]$folder, [string]$previousFolder) {
             $checked[$replacement.source] = $true
         }
         $previousSounds = $null
-        if(-not $available -and $previousFolder -and $file.soundtrack.PSObject.Properties['previous_sha256']) {
+        if(-not $available -and $previousFolder) {
+            # Album sound tags are identical in every known variant and version.
+            $previousKnown = @(KnownHashes $file)
+            if($file.soundtrack.PSObject.Properties['previous_sha256']) { $previousKnown += $file.soundtrack.previous_sha256 }
             $previousPath = LocalPath $previousFolder $file.path
-            if((Test-Path -LiteralPath $previousPath) -and (Hash $previousPath) -eq $file.soundtrack.previous_sha256) {
+            if((Test-Path -LiteralPath $previousPath) -and $previousKnown -contains (Hash $previousPath)) {
                 $previousSounds = @{}
                 foreach($sound in [StickRpg4kPatch]::ReadTags($previousPath)) {
                     if($sound.Code -eq 14) { $previousSounds[[int][BitConverter]::ToUInt16($sound.Data,0)] = $sound }
@@ -63,8 +91,8 @@ function UpdateSoundtrack([string]$folder, [string]$previousFolder) {
         }
         $temporary = $target + '.sr4k-' + [Guid]::NewGuid().ToString('N')
         try {
-            [StickRpg4kPatch]::WriteResizedSwf($temporary, [Convert]::FromBase64String($file.header), $tags)
-            if((Hash $temporary) -ne $file.soundtrack.sha256) { throw ('Soundtrack checksum mismatch: ' + $file.path) }
+            [StickRpg4kPatch]::WriteResizedSwf($temporary, [Convert]::FromBase64String($expected.header), $tags)
+            if((Hash $temporary) -ne $expected.hq) { throw ('Soundtrack checksum mismatch: ' + $file.path) }
             [IO.File]::Replace($temporary, $target, [NullString]::Value)
         } finally {
             if(Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
@@ -76,12 +104,14 @@ $gameFolder = Join-Path $root 'game'
 $stampPath = Join-Path $gameFolder '.installed.json'
 if(Test-Path -LiteralPath $stampPath) {
     $stamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
-    $ready = $stamp.version -eq $manifest.version
+    $installedUpscale = -not $stamp.PSObject.Properties['upscale'] -or [bool]$stamp.upscale
+    $ready = $stamp.version -eq $manifest.version -and $installedUpscale -eq $upscale
     foreach($file in $manifest.files) {
         $path = LocalPath $gameFolder $file.path
         if(-not (Test-Path -LiteralPath $path)) { $ready = $false; break }
         $currentHash = Hash $path
-        if($currentHash -ne $file.sha256 -and (-not $file.PSObject.Properties['soundtrack'] -or $currentHash -ne $file.soundtrack.sha256)) { $ready = $false; break }
+        $expected = Expected $file
+        if($currentHash -ne $expected.sha256 -and $currentHash -ne $expected.hq) { $ready = $false; break }
     }
     if($ready) { UpdateSoundtrack $gameFolder; exit 0 }
 }
@@ -115,7 +145,12 @@ if(Test-Path -LiteralPath $gameFolder) {
     if(-not (Test-Path -LiteralPath $stampPath)) { throw 'An incomplete or older game\ folder exists. Rename that generated folder, then run config.exe again. Your saves are in saves\.' }
     $oldStamp = Get-Content -LiteralPath $stampPath -Raw | ConvertFrom-Json
     $compatible = $null
-    if($manifest.PSObject.Properties['upgrade_from']) { $compatible = $manifest.upgrade_from.PSObject.Properties[$oldStamp.version] }
+    if($oldStamp.version -eq $manifest.version) {
+        # Same version, other option: accept any variant of the current build.
+        $current = New-Object PSObject
+        foreach($file in $manifest.files) { $current | Add-Member -NotePropertyName $file.path -NotePropertyValue @(KnownHashes $file) }
+        $compatible = New-Object PSObject -Property @{ Value = $current }
+    } elseif($manifest.PSObject.Properties['upgrade_from']) { $compatible = $manifest.upgrade_from.PSObject.Properties[$oldStamp.version] }
     if($null -eq $compatible) { throw 'This generated game version cannot be upgraded automatically. Rename game\ and run config.exe again. Your saves are in saves\.' }
     $expectedFiles = @('.installed.json') + @($manifest.files.path)
     $gamePrefix = [IO.Path]::GetFullPath($gameFolder).TrimEnd('\') + '\'
@@ -128,8 +163,10 @@ if(Test-Path -LiteralPath $gameFolder) {
     }
     foreach($file in $manifest.files) {
         $path = LocalPath $gameFolder $file.path
+        # Files missing from the old build (e.g. newly packaged ones) are simply regenerated.
+        if(-not (Test-Path -LiteralPath $path)) { continue }
         $accepted = $compatible.Value.PSObject.Properties[$file.path]
-        if($null -eq $accepted -or -not (Test-Path -LiteralPath $path) -or @($accepted.Value) -notcontains (Hash $path)) { throw ('Modified or incomplete generated game file: ' + $file.path) }
+        if($null -eq $accepted -or @($accepted.Value) -notcontains (Hash $path)) { throw ('Modified or incomplete generated game file: ' + $file.path) }
     }
     Write-Output 'Verified the previous generated game; preparing an automatic upgrade.'
 }
@@ -192,7 +229,15 @@ try {
         $source = LocalPath $bases $file.source
         $target = LocalPath $staging $file.path
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
-        if($file.copy) {
+        if($file.copy -and $file.PSObject.Properties['replace']) {
+            # Small text settings: copy with exact, verified value substitutions.
+            $text = [IO.File]::ReadAllText($source, [Text.Encoding]::GetEncoding(28591))
+            foreach($pair in $file.replace) {
+                if(-not $text.Contains($pair[0])) { throw ('Unexpected original text in ' + $file.path) }
+                $text = $text.Replace($pair[0], $pair[1])
+            }
+            [IO.File]::WriteAllText($target, $text, [Text.Encoding]::GetEncoding(28591))
+        } elseif($file.copy) {
             [IO.File]::Copy($source, $target)
         } else {
             $oldTags = [StickRpg4kPatch]::ReadTags($source)
@@ -200,6 +245,8 @@ try {
             foreach($step in $file.tags) {
                 if($step -is [ValueType]) {
                     $tag = $oldTags[[int]$step]
+                } elseif(-not $upscale -and $step.PSObject.Properties['option'] -and $step.option -eq 'upscale') {
+                    $tag = $oldTags[[int]$step.original]
                 } elseif($step.PSObject.Properties['asset']) {
                     $bytes = [StickRpg4kPatch]::Asset((LocalPath $root $step.asset), [long]$step.offset, [int]$step.length)
                     $tag = New-Object SR4KTag ([int]$step.code),$bytes
@@ -212,12 +259,12 @@ try {
                 } else { throw 'Unknown patch record.' }
                 $newTags.Add($tag)
             }
-            [StickRpg4kPatch]::WriteSwf($target, [Convert]::FromBase64String($file.header), $newTags)
+            [StickRpg4kPatch]::WriteSwf($target, [Convert]::FromBase64String((Expected $file).header), $newTags)
         }
-        if((Hash $target) -ne $file.sha256) { throw ('Rebuilt file checksum mismatch: ' + $file.path) }
+        if((Hash $target) -ne (Expected $file).sha256) { throw ('Rebuilt file checksum mismatch: ' + $file.path) }
     }
     UpdateSoundtrack $staging $gameFolder
-    @{version=$manifest.version; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.Name} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
+    @{version=$manifest.version; upscale=$upscale; original_exe_sha256=$manifest.original_exe_sha256; source_exe_path=$original.Name} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging '.installed.json') -Encoding UTF8
     if(Test-Path -LiteralPath $gameFolder) {
         $previousGame = LocalPath $work 'previous-game'
         Move-Item -LiteralPath $gameFolder -Destination $previousGame

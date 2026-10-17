@@ -1,13 +1,23 @@
 # StickRPG4K — continuation state
 
-Current implementation: **1.4.0**, 16 October 2026. See `DEVELOPMENT.md` first.
+Current implementation: **1.5.0**, 17 October 2026. See `DEVELOPMENT.md` first.
 The continuation archive's `CONTINUATION.json` records its exact Git commit.
 
 - Windows portable mod; every runtime resource, generated game, setting and save
   lives beside the user's own original EXE. Never restore absolute machine paths.
 - Steam's normal game EXE becomes our launcher; the original remains `stick.exe`.
   The launcher waits for Ruffle and inherits Steam's environment.
-- 800×450 widescreen gameplay, original menu/minigame proportions, prebuilt 4K UI.
+- 800×450 widescreen gameplay, original menu/minigame proportions. Overlay dimmers
+  (stats, inventory, receipt, phone, trophies, notices) are stretched to 16:9 at runtime.
+- Optional AI upscaling (`assets/*-03.bin`, config checkbox / `Install.ps1 -NoUpscale`) of
+  icons, UI, backgrounds and the combat arena, always made from the original bitmaps;
+  rebane2001's hand-made art stays in `assets/*-hd.bin`. Launcher starts fullscreen via
+  Ruffle and `hdFullscreen=1` (the SWF requests it if Ruffle did not).
+- Combat (Ballistick, `sa_ballistick_beta_insecure.swf`, AS2) needs `settings566b.ini`,
+  which earlier versions never installed (black arena). It is copied with bitmap caching
+  off. At runtime the combat container is kept at 1:1 (ASBContainer.init() stretched it
+  in Ruffle), the city world is hidden and smoothing paused during combat. Combat
+  stutter was a Ruffle performance issue fixed by nightly 2026-10-16 (2026-10-09 stuttered).
   Logic stays at 30 FPS; 60 targets interpolation, 120 is experimental (~100 updates/s).
 - 22 music excerpts use matching local Steam Soundtrack MP3 frames without re-encoding.
   Piano/casino keep originals. Missing album files preserve existing valid HQ audio
@@ -16,19 +26,18 @@ The continuation archive's `CONTINUATION.json` records its exact Git commit.
   to F13. The SWF clicks the topmost visible Leave/Close button (phone, ID card,
   receipt, shops, dialogs, summaries, inventory, minigames); otherwise it opens the
   phone in the city, or forwards a normal Escape to the game (ATM keypad Cancel).
-- Unreleased fixes after 1.4.0 (data `wide4k-options-ui-2026-10-16`): the options
-  panel no longer throws on open (QualitySlider lookup across domains), its
-  background no longer covers the Save/Cheats tabs, Escape-to-Leave as above.
-  Verified by the user in game: options, Save tab, Escape on phone/ID card/close_btn.
+- 1.5.0 also fixed: options panel crash (QualitySlider lookup across domains), options
+  background covering the Save/Cheats tabs, config.exe DPI scaling. Verified by the user
+  in game: options, Save tab, Escape menus, icons, overlays, combat display and smoothness.
 - The phone Options screen is the original one (FULLSCREEN switch, QUALITY slider,
   version); only the MUSIC/SFX on-off switches are replaced by volume sliders.
 - Music/SFX volume sliders reuse original QualitySlider artwork and persist separately
   from scene attenuation. Quality defaults to Ultra. Saves/load/Continue use the
   original local format without account prompts. Account service callbacks are disabled.
-- Manifest data version: `wide4k-options-ui-2026-10-16` (upgrades from 1.4.0). Installer upgrades only recognized
+- Manifest data version: `wide4k-1.5.0-2026-10-17` (upgrades from 1.4.0 and the 1.4.x fixes). Installer upgrades only recognized
   generated files; unknown files and edited data block replacement. Saves are separate.
 - Original EXE SHA-256: `2bde20d37e45ea5ac1d517d55a89241250718f213f615982171aad28b9b56a06`.
-  Steam app 307640, tested original build 297016. Ruffle nightly 2026-10-09.
+  Steam app 307640, tested original build 297016. Ruffle nightly 2026-10-16.
 - GitHub: `GregoriousX/StickRPG4K`, must remain private. No original EXE, complete
   game code, soundtrack, saves or machine-specific settings may be published.
 - Completed checks: 21 menu/offline/audio checks in hidden Ruffle, 21 native Escape

@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("StickRPG4K")]
 [assembly: AssemblyDescription("Steam launcher and configuration for the StickRPG4K mod")]
 [assembly: AssemblyProduct("StickRPG4K")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace StickRpg4k {
     public sealed class LauncherSettings {
@@ -19,7 +19,9 @@ namespace StickRpg4k {
         public bool Fullscreen { get; set; }
         public string OriginalExe { get; set; }
         public string GameDirectory { get; set; }
-        public LauncherSettings() { Fps = 60; Fullscreen = true; OriginalExe = ""; GameDirectory = "."; }
+        // Install the AI-upscaled icons and interface (assets/*-03.bin).
+        public bool Upscale { get; set; }
+        public LauncherSettings() { Fps = 60; Fullscreen = true; OriginalExe = ""; GameDirectory = "."; Upscale = true; }
         public static LauncherSettings Load(string root) {
             try {
                 string file = Path.Combine(root, "launcher-settings.json");
@@ -59,16 +61,18 @@ namespace StickRpg4k {
             }
             return result.Append('\\', slashes * 2).Append('"').ToString();
         }
-        public static string InstallerArguments(string root, string original) {
+        public static string InstallerArguments(string root, string original) { return InstallerArguments(root, original, true); }
+        public static string InstallerArguments(string root, string original, bool upscale) {
             return "-NoLogo -NoProfile -ExecutionPolicy Bypass -File " + Quote(Path.Combine(root, "Install.ps1")) +
-                   (String.IsNullOrEmpty(original) ? "" : " -OriginalExe " + Quote(original));
+                   (String.IsNullOrEmpty(original) ? "" : " -OriginalExe " + Quote(original)) + (upscale ? "" : " -NoUpscale");
         }
         public static string RuffleArguments(string root, int fps, bool fullscreen) {
             if (fps != 30 && fps != 60 && fps != 120) throw new ArgumentException("Unsupported motion setting.");
             return Quote(Path.Combine(root, "game", "Zinc Shell Mac.swf")) + (fullscreen ? " --fullscreen" : " --width 1600 --height 900") +
                    " --quality high --scale show-all --force-scale --storage disk --save-directory " + Quote(Path.Combine(root, "saves")) +
                    " --config " + Quote(Path.Combine(root, "runtime", "config")) + " --cache-directory " + Quote(Path.Combine(root, "runtime", "cache")) +
-                   " --filesystem-access-mode allow --open-url-mode deny --tcp-connections deny --load-behavior delayed -P hdFPS=" + fps;
+                   " --filesystem-access-mode allow --open-url-mode deny --tcp-connections deny --load-behavior delayed -P hdFPS=" + fps +
+                   (fullscreen ? " -P hdFullscreen=1" : "");
         }
     }
     public static class SetupService {
@@ -78,7 +82,7 @@ namespace StickRpg4k {
             if (!SteamIntegration.SameDirectory(root, Path.GetDirectoryName(original)))
                 throw new InvalidOperationException("Extract the complete release ZIP next to the game EXE, then run config.exe from that folder. The mod and game must be in the same folder.");
             if (!SourceDiscovery.IsOriginal(original)) throw new InvalidOperationException("This is not the supported original Director's Cut EXE.");
-            RunInstaller(root, original, progress);
+            RunInstaller(root, original, settings.Upscale, progress);
             progress("Installing the Steam launcher...");
             string directory = Path.GetDirectoryName(original);
             SteamIntegration.Install(root, directory, original);
@@ -86,10 +90,11 @@ namespace StickRpg4k {
             settings.GameDirectory = ".";
             settings.Save(root);
         }
-        public static void RunInstaller(string root, string original, Action<string> progress) {
+        public static void RunInstaller(string root, string original, Action<string> progress) { RunInstaller(root, original, true, progress); }
+        public static void RunInstaller(string root, string original, bool upscale, Action<string> progress) {
             ProcessStartInfo info = new ProcessStartInfo {
                 FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe"),
-                Arguments = LaunchCommand.InstallerArguments(root, original), WorkingDirectory = root,
+                Arguments = LaunchCommand.InstallerArguments(root, original, upscale), WorkingDirectory = root,
                 UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
                 RedirectStandardOutput = true, RedirectStandardError = true
             };

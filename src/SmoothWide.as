@@ -92,6 +92,12 @@ package com.srpg2.hd {
             state.inUpdate=true;
         }
 
+        // Stop interpolation ticks entirely while another view (combat) is up.
+        public static function suspend(off:Boolean):void {
+            if(!timer)return;
+            if(off)timer.stop(); else if(!timer.running)timer.start();
+        }
+
         public static function pause(main:Object):void {
             var state:Object=states[main];
             if(!state)return;

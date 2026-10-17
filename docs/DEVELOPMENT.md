@@ -57,6 +57,21 @@ and JPEXS, generate small COPY/INSERT deltas, and verify both SWF variants.
 `dev/patch_offline_ui_reference.py` documents the existing method edits; it is a
 disabled historical reference, not a build script requiring old machine folders.
 
+## Upscaled bitmaps
+
+Every AI-upscaled bitmap is made from the original game's bitmap, never from earlier
+AI output. `assets/<swf>-hd.bin` holds only rebane2001's hand-remade art (new/, proj/);
+the former AI packs `-01/-02` (rebane2001 upsies and re-upscales of them) were dropped.
+`dev/upscale_assets.py` (extract, upscale, build) writes `assets/<swf>-03.bin`: item
+icons and scenes/backgrounds (400 px or more) with Remacri, other shape-drawn UI with
+realesrgan-x4plus-anime, up to 4x and at most 4096 px. All `-03` steps are optional
+(`option: upscale`); `Install.ps1 -NoUpscale` / the config checkbox keeps originals.
+JPEG3 colour is premultiplied: decode/encode through `dev/swf_bitmaps.py` only. Upscalers and models live only in ignored `dev/toolchain/` (official
+Real-ESRGAN ncnn release, Upscayl model repos); never commit them, only the packs.
+Run `build` against the committed manifest's HQ installation. Pillow/numpy go in an
+ignored venv (`dev/local/venv`). Real-ESRGAN's directory mode corrupts mixed-size
+batches, so the script runs one process per image and checks every result.
+
 All generated work belongs in ignored `dev/local/`. Never commit original EXEs,
 complete game SWFs, album MP3s, saves, cache, credentials or the toolchain.
 No CUA or desktop automation on the original workstation.

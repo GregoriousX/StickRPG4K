@@ -38,12 +38,14 @@ config.exe again. The original `stick.exe` backup is reused.
 ## Features
 
 - 16:9 gameplay without stretching; menus and minigames keep their original aspect ratio.
-- Upscaled UI and textures up to 4096 pixels, supplied prebuilt.
+- AI-upscaled icons, interface and backgrounds (up to 4x, max 4096 px), made from the original game's art and supplied prebuilt. Untick **AI-upscaled icons, interface and backgrounds** in config.exe to keep the original bitmaps.
+- Hand-remade textures from StickRPG2-HD by rebane2001.
 - Motion interpolation targeting 60 FPS; game logic stays at 30 FPS.
 - Fixed Ruffle music playback, looping, fades and music controls.
 - Higher-quality Steam album excerpts for 22 music clips, without re-encoding.
 - Independent music and sound effects sliders, saved between sessions.
 - Local saves without XGen account or login prompts; Ultra quality by default.
+- Working street fights: the combat engine's missing settings file is installed, shown 1:1 and smooth.
 
 Keep Steam's original `Soundtrack/` folder beside the EXE when running config.exe.
 Setup uses its matching MP3 files to replace the corresponding embedded music,
@@ -61,5 +63,6 @@ Development and transfer instructions: [development guide](https://github.com/Gr
 ## Credits
 
 Original game: XGen Studios. Based on [StickRPG2-HD](https://github.com/rebane2001/StickRPG2-HD).
-Runtime: [Ruffle](https://github.com/ruffle-rs/ruffle), nightly 2026-10-09
-([license](runtime/LICENSE.md)). UI upscaling: [Upscayl](https://github.com/upscayl/upscayl).
+Runtime: [Ruffle](https://github.com/ruffle-rs/ruffle), nightly 2026-10-16
+([license](runtime/LICENSE.md)). Upscaling: [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) with Remacri and x4plus-anime models
+([Upscayl](https://github.com/upscayl/upscayl) model collection).

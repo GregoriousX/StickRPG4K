@@ -12,6 +12,7 @@ namespace StickRpg4k {
         private readonly TextBox source = new TextBox();
         private readonly ComboBox motion = new ComboBox();
         private readonly ComboBox display = new ComboBox();
+        private readonly CheckBox upscale = new CheckBox();
         private readonly Label sourceStatus = new Label();
         private readonly Label note = new Label();
         private readonly Label status = new Label();
@@ -20,102 +21,153 @@ namespace StickRpg4k {
         private readonly Button play = new Button();
         private readonly Button restore = new Button();
         private readonly ProgressBar progress = new ProgressBar();
+        private readonly Panel banner = new Panel();
+        private readonly Panel bannerStripe = new Panel();
+        private readonly Label bannerText = new Label();
         private bool busy;
         private readonly Color muted = Color.FromArgb(166, 177, 194);
+        private readonly Color card = Color.FromArgb(30, 37, 50);
+        private readonly Color input = Color.FromArgb(40, 49, 65);
         public LauncherForm(string rootPath, string originalArgument) : this(rootPath, originalArgument, false) { }
         public LauncherForm(string rootPath, string originalArgument, bool continueToGame) {
             root = rootPath;
             launchAfterSave = continueToGame;
             Text = "StickRPG4K settings";
-            ClientSize = new Size(608, 433);
+            ClientSize = new Size(640, 596);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            AutoScaleDimensions = new SizeF(96, 96);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            // Layout is in 96-DPI pixels and scaled once below; fonts are in points.
+            AutoScaleMode = AutoScaleMode.None;
             BackColor = Color.FromArgb(23, 28, 38);
             ForeColor = Color.FromArgb(235, 240, 248);
             Font = new Font("Segoe UI", 9.5F);
-            Label title = AddLabel("StickRPG4K", 24, 17, 550, 35);
-            title.Font = new Font("Segoe UI", 21, FontStyle.Bold);
-            AddLabel("Widescreen. Ready-made 4K assets. Smoother motion.", 25, 57, 550, 21).ForeColor = muted;
-            AddLabel("Original game EXE in this folder", 24, 98, 550, 20);
-            source.SetBounds(24, 122, 420, 27);
+            Label title = AddLabel(this, "StickRPG4K", 22, 14, 300, 38);
+            title.Font = new Font("Segoe UI", 20, FontStyle.Bold);
+            Label version = AddLabel(this, "v" + typeof(LauncherForm).Assembly.GetName().Version.ToString(3), 456, 26, 160, 20);
+            version.TextAlign = ContentAlignment.MiddleRight;
+            version.ForeColor = muted;
+            AddLabel(this, "Widescreen Stick RPG 2 with sharper art and smoother motion.", 24, 52, 592, 20).ForeColor = muted;
+            // Installation state at a glance.
+            banner.SetBounds(24, 82, 592, 40);
+            banner.BackColor = card;
+            bannerStripe.SetBounds(0, 0, 5, 40);
+            banner.Controls.Add(bannerStripe);
+            bannerText.SetBounds(16, 0, 570, 40);
+            bannerText.TextAlign = ContentAlignment.MiddleLeft;
+            banner.Controls.Add(bannerText);
+            Controls.Add(banner);
+
+            Panel game = AddSection("GAME", 136, 126);
+            AddLabel(game, "Original Stick RPG 2 Director's Cut EXE (in this folder)", 14, 30, 560, 20);
+            source.SetBounds(14, 54, 430, 27);
             source.ReadOnly = true;
-            source.BackColor = Color.FromArgb(35, 43, 57);
+            source.BackColor = input;
             source.ForeColor = ForeColor;
             source.BorderStyle = BorderStyle.FixedSingle;
             source.TabIndex = 0;
-            Controls.Add(source);
-            ConfigureButton(browse, "Choose EXE...", 456, 120, 128, 31, false);
+            game.Controls.Add(source);
+            ConfigureButton(game, browse, "Choose EXE...", 454, 52, 124, 31, false);
             browse.TabIndex = 1;
             browse.Click += BrowseClicked;
-            ConfigureButton(findSteam, "Find Steam copy", 24, 159, 143, 29, false);
+            ConfigureButton(game, findSteam, "Find Steam copy", 14, 88, 140, 28, false);
             findSteam.TabIndex = 2;
             findSteam.Click += delegate { FindSource(true); };
-            sourceStatus.SetBounds(179, 163, 405, 32);
+            sourceStatus.SetBounds(164, 88, 414, 28);
+            sourceStatus.TextAlign = ContentAlignment.MiddleLeft;
             sourceStatus.ForeColor = muted;
-            Controls.Add(sourceStatus);
-            AddLabel("Motion smoothness", 24, 210, 260, 22);
-            AddLabel("Display mode", 316, 210, 268, 22);
-            ConfigureCombo(motion, 24, 236, 268);
+            game.Controls.Add(sourceStatus);
+
+            Panel screen = AddSection("DISPLAY", 274, 116);
+            AddLabel(screen, "Motion smoothness", 14, 30, 276, 20);
+            AddLabel(screen, "Display mode", 304, 30, 274, 20);
+            ConfigureCombo(screen, motion, 14, 52, 276);
             motion.Items.AddRange(new object[] { "30 FPS (original)", "60 FPS (recommended)", "120 FPS (experimental)" });
             motion.TabIndex = 3;
             motion.SelectedIndexChanged += delegate { UpdateNote(); };
-            ConfigureCombo(display, 316, 236, 268);
+            ConfigureCombo(screen, display, 304, 52, 274);
             display.Items.AddRange(new object[] { "Fullscreen", "Windowed (1600 x 900)" });
             display.TabIndex = 4;
-            note.SetBounds(24, 276, 560, 35);
+            note.SetBounds(14, 86, 564, 22);
             note.ForeColor = muted;
-            Controls.Add(note);
-            progress.SetBounds(24, 365, 560, 5);
+            screen.Controls.Add(note);
+
+            Panel graphics = AddSection("GRAPHICS", 402, 84);
+            upscale.Text = "AI-upscaled icons, interface and backgrounds (recommended)";
+            upscale.SetBounds(14, 30, 564, 24);
+            upscale.FlatStyle = FlatStyle.Flat;
+            upscale.ForeColor = ForeColor;
+            upscale.Cursor = Cursors.Hand;
+            upscale.TabIndex = 5;
+            graphics.Controls.Add(upscale);
+            AddLabel(graphics, "4x sharper art upscaled from the original game. Untick to keep the original bitmaps.", 32, 56, 546, 20).ForeColor = muted;
+
+            status.SetBounds(24, 496, 592, 36);
+            status.ForeColor = muted;
+            Controls.Add(status);
+            progress.SetBounds(24, 532, 592, 4);
             progress.Style = ProgressBarStyle.Marquee;
             progress.MarqueeAnimationSpeed = 25;
             progress.Visible = false;
             Controls.Add(progress);
-            status.SetBounds(24, 319, 560, 40);
-            status.ForeColor = muted;
-            Controls.Add(status);
-            ConfigureButton(restore, "Restore original EXE", 24, 382, 190, 34, false);
-            restore.TabIndex = 5;
+            ConfigureButton(this, restore, "Restore original EXE", 24, 544, 190, 36, false);
+            restore.TabIndex = 6;
             restore.Click += RestoreClicked;
-            ConfigureButton(play, "Save & install", 394, 380, 190, 38, true);
-            play.TabIndex = 6;
+            ConfigureButton(this, play, "Save & install", 426, 542, 190, 40, true);
+            play.TabIndex = 7;
             play.Click += PlayClicked;
             AcceptButton = play;
-            FormClosing += delegate(object sender, FormClosingEventArgs args) { if (busy) args.Cancel = true; };
+            Shown += delegate { ActiveControl = play; };
+            FormClosing +=delegate(object sender, FormClosingEventArgs args) { if (busy) args.Cancel = true; };
             LauncherSettings settings = LauncherSettings.Load(root);
             motion.SelectedIndex = settings.Fps == 30 ? 0 : settings.Fps == 120 ? 2 : 1;
             display.SelectedIndex = settings.Fullscreen ? 0 : 1;
+            upscale.Checked = settings.Upscale;
             if (!String.IsNullOrEmpty(originalArgument) && File.Exists(originalArgument)) SetSource(originalArgument, "Game copy selected.");
             else if (!String.IsNullOrEmpty(settings.OriginalExe) && File.Exists(Path.Combine(root, settings.OriginalExe))) SetSource(Path.Combine(root, settings.OriginalExe), "Saved game copy.");
             else FindSource(false);
             UpdateInstallationStatus();
+            using (Graphics surface = CreateGraphics()) {
+                float factor = surface.DpiX / 96F;
+                if (Math.Abs(factor - 1F) > 0.01F) {
+                    Scale(new SizeF(factor, factor));
+                    motion.ItemHeight = display.ItemHeight = (int)Math.Round(22 * factor);  // owner-drawn rows
+                }
+            }
         }
-        private Label AddLabel(string text, int x, int y, int width, int height) {
+        private Panel AddSection(string heading, int y, int height) {
+            Panel section = new Panel { BackColor = card };
+            section.SetBounds(24, y, 592, height);
+            Label header = AddLabel(section, heading, 14, 8, 300, 18);
+            header.Font = new Font("Segoe UI", 8.25F, FontStyle.Bold);
+            header.ForeColor = Color.FromArgb(110, 168, 245);
+            Controls.Add(section);
+            return section;
+        }
+        private Label AddLabel(Control parent, string text, int x, int y, int width, int height) {
             Label label = new Label { Text = text };
             label.SetBounds(x, y, width, height);
-            Controls.Add(label);
+            parent.Controls.Add(label);
             return label;
         }
-        private void ConfigureButton(Button button, string text, int x, int y, int width, int height, bool primary) {
+        private void ConfigureButton(Control parent, Button button, string text, int x, int y, int width, int height, bool primary) {
             button.Text = text;
             button.SetBounds(x, y, width, height);
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderColor = primary ? Color.FromArgb(65, 149, 241) : Color.FromArgb(67, 79, 98);
-            button.BackColor = primary ? Color.FromArgb(44, 115, 205) : Color.FromArgb(35, 43, 57);
+            button.BackColor = primary ? Color.FromArgb(44, 115, 205) : input;
             button.ForeColor = ForeColor;
             button.Font = new Font(Font, primary ? FontStyle.Bold : FontStyle.Regular);
             button.Cursor = Cursors.Hand;
-            Controls.Add(button);
+            parent.Controls.Add(button);
         }
-        private void ConfigureCombo(ComboBox combo, int x, int y, int width) {
+        private void ConfigureCombo(Control parent, ComboBox combo, int x, int y, int width) {
             combo.SetBounds(x, y, width, 28);
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
             combo.FlatStyle = FlatStyle.Flat;
             combo.DrawMode = DrawMode.OwnerDrawFixed;
             combo.ItemHeight = 22;
-            combo.BackColor = Color.FromArgb(35, 43, 57);
+            combo.BackColor = input;
             combo.ForeColor = ForeColor;
             combo.DrawItem += delegate(object sender, DrawItemEventArgs args) {
                 if (args.Index < 0) return;
@@ -125,7 +177,7 @@ namespace StickRpg4k {
                 TextRenderer.DrawText(args.Graphics, combo.GetItemText(combo.Items[args.Index]), combo.Font, textBounds, combo.ForeColor,
                                       TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             };
-            Controls.Add(combo);
+            parent.Controls.Add(combo);
         }
         private void UpdateNote() {
             note.Text = motion.SelectedIndex == 2 ? "Experimental: this Ruffle build supports up to about 100 smoothing updates/s." : "Smoother camera and movement without speeding up the game.";
@@ -136,7 +188,10 @@ namespace StickRpg4k {
             bool installed = SteamIntegration.IsInstalled(root, SelectedDirectory());
             restore.Enabled = installed;
             play.Text = launchAfterSave ? "Save & play" : installed ? "Save settings" : "Save & install";
-            status.Text = installed ? "Installed in this folder. Start the game normally or use Steam." : "Extract the full release ZIP beside the game EXE. Any folder works.";
+            bannerStripe.BackColor = installed ? Color.FromArgb(70, 190, 120) : Color.FromArgb(232, 172, 64);
+            bannerText.Text = installed ? "Mod installed. Start the game through Steam or with StickRPG4K.exe."
+                                        : "Not installed yet. Extract the full ZIP beside the game EXE, then click Save & install.";
+            status.Text = "";
         }
         private void FindSource(bool onlySteam) {
             if (onlySteam) {
@@ -161,7 +216,7 @@ namespace StickRpg4k {
         }
         private void SetBusy(bool value) {
             busy = value;
-            browse.Enabled = findSteam.Enabled = motion.Enabled = display.Enabled = play.Enabled = !value;
+            browse.Enabled = findSteam.Enabled = motion.Enabled = display.Enabled = upscale.Enabled = play.Enabled = !value;
             restore.Enabled = !value && SteamIntegration.IsInstalled(root, SelectedDirectory());
             ControlBox = !value;
             progress.Visible = value;
@@ -174,7 +229,7 @@ namespace StickRpg4k {
         internal LauncherSettings CurrentSettings() {
             return new LauncherSettings {
                 Fps = motion.SelectedIndex == 0 ? 30 : motion.SelectedIndex == 2 ? 120 : 60,
-                Fullscreen = display.SelectedIndex == 0, OriginalExe = source.Text
+                Fullscreen = display.SelectedIndex == 0, OriginalExe = source.Text, Upscale = upscale.Checked
             };
         }
         private async void PlayClicked(object sender, EventArgs args) {
@@ -231,6 +286,8 @@ namespace StickRpg4k {
                 if (headless) {
                     LauncherSettings settings = LauncherSettings.Load(root);
                     if (original != null) settings.OriginalExe = original;
+                    if (Array.IndexOf(args, "--no-upscale") >= 0) settings.Upscale = false;
+                    if (Array.IndexOf(args, "--upscale") >= 0) settings.Upscale = true;
                     if (Array.IndexOf(args, "--restore") >= 0) {
                         string originalName = SteamIntegration.ReadLink(root).OriginalFileName;
                         SteamIntegration.Restore(root, root);
